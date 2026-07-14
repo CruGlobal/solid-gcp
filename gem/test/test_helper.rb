@@ -88,7 +88,10 @@ module SolidGcp
       SolidGcp.config.mode = :test
       SolidGcp.config.verify_oidc = false
       SolidGcp.config.cable.mode = :off
+      SolidGcp.config.cable.touch_debounce = 1.second
+      SolidGcp::Cable.reset_missing_project_warning!
       SolidGcp::Cable::TestSink.clear!
+      SolidGcp::Backends::Local.clear_seen!
       SolidGcp::Testing.clear!
       SolidGcp.instance_variable_set(:@oidc_verifier, nil)
       [SolidGcp::Semaphore, SolidGcp::BlockedJob, SolidGcp::FailedJob].each(&:delete_all)

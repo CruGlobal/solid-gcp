@@ -9,13 +9,15 @@ module SolidGcp
 
     module_function
 
-    # From an ActiveJob instance (enqueue path).
-    def dispatch(job, at: nil)
+    # From an ActiveJob instance (enqueue path). `name:` requests a Cloud Tasks
+    # named task (backend-deduped), used by the Cable touch debounce.
+    def dispatch(job, at: nil, name: nil)
       envelope = Envelope.build(job)
       enqueue(envelope,
               queue: job.queue_name,
               path: path_for(job.class),
-              at: at)
+              at: at,
+              name: name)
     end
 
     # From an existing envelope (blocked-job promotion, failed-job retry).

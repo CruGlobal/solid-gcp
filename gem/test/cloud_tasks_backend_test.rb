@@ -63,4 +63,40 @@ class CloudTasksBackendTest < SolidGcp::TestCase
     name = client.created.first[:task][:name]
     assert_equal "projects/test-project/locations/us-central1/queues/solid-gcp-default/tasks/sweep-123", name
   end
+
+  # Client raising AlreadyExistsError (a named-task collision, e.g. the Cable
+  # touch debounce) is swallowed silently — the winning task already exists.
+  test "swallows Google::Cloud::AlreadyExistsError from create_task" do
+    stub_const_already_exists!
+    client = Object.new
+    def client.queue_path(project:, location:, queue:) = "parent"
+    def client.create_task(parent:, task:)
+      raise Google::Cloud::AlreadyExistsError, "task name already exists"
+    end
+
+    assert_nil backend(client).enqueue(queue: "default", path: "/solid_gcp/perform",
+      body: "{}", name: "sgc-touch-abc-1001")
+  end
+
+  test "re-raises other errors from create_task" do
+    client = Object.new
+    def client.queue_path(project:, location:, queue:) = "parent"
+    def client.create_task(parent:, task:) = raise(RuntimeError, "boom")
+
+    assert_raises(RuntimeError) do
+      backend(client).enqueue(queue: "default", path: "/solid_gcp/perform", body: "{}")
+    end
+  end
+
+  private
+
+  # Define the minimal constant tree the backend's already_exists? guard checks,
+  # without pulling in the real google-cloud-tasks gem.
+  def stub_const_already_exists!
+    return if defined?(Google::Cloud::AlreadyExistsError)
+
+    Object.const_set(:Google, Module.new) unless defined?(Google)
+    Google.const_set(:Cloud, Module.new) unless defined?(Google::Cloud)
+    Google::Cloud.const_set(:AlreadyExistsError, Class.new(StandardError))
+  end
 end

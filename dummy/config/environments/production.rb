@@ -98,12 +98,11 @@ Rails.application.configure do
   # Cloud Run Job that runs FakeImportJob via `bin/rails solid_gcp:execute`.
   config.solid_gcp.cloud_run_job_name      = ENV.fetch("SOLID_GCP_CLOUD_RUN_JOB", "dummy-import-runner")
 
-  # SolidGcp::Cable realtime demo. Enabled only when a Firestore project is set,
-  # so the queue-only deployment path stays network-free for cable.
-  if ENV["SOLID_GCP_CABLE_PROJECT"].present?
-    config.solid_gcp.cable.mode                = :firestore
-    config.solid_gcp.cable.project             = ENV["SOLID_GCP_CABLE_PROJECT"]
-    config.solid_gcp.cable.firebase_web_config = JSON.parse(ENV["SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG"] || "{}")
-    config.solid_gcp.cable.signer_email        = ENV["SOLID_GCP_CABLE_SIGNER_EMAIL"] # optional; nil -> ADC/metadata SA
-  end
+  # SolidGcp::Cable realtime demo. Default-on (:firestore), falling back to the
+  # queue component's project (SOLID_GCP_PROJECT) when SOLID_GCP_CABLE_PROJECT is
+  # unset. Set config.solid_gcp.cable.mode = :off to opt out if cable infra
+  # (Firestore/Firebase) is not deployed.
+  config.solid_gcp.cable.project             = ENV["SOLID_GCP_CABLE_PROJECT"] if ENV["SOLID_GCP_CABLE_PROJECT"].present?
+  config.solid_gcp.cable.firebase_web_config = JSON.parse(ENV["SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG"]) if ENV["SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG"].present?
+  config.solid_gcp.cable.signer_email        = ENV["SOLID_GCP_CABLE_SIGNER_EMAIL"] if ENV["SOLID_GCP_CABLE_SIGNER_EMAIL"].present? # nil -> ADC/metadata SA
 end

@@ -46,18 +46,20 @@ module SolidGcp
     # network-free until `mode` is set to :firestore or :test.
     class CableConfiguration
       attr_accessor :database, :collection, :signer_email,
-                    :firebase_web_config, :stream_ttl, :token_ttl
+                    :firebase_web_config, :stream_ttl, :token_ttl,
+                    :touch_debounce
       attr_writer :mode, :project
 
       def initialize(parent)
         @parent = parent
-        @mode = :off
+        @mode = :firestore
         @database = "(default)"
         @collection = "solid_gcp_streams"
         @signer_email = nil
         @firebase_web_config = {}
         @stream_ttl = 30.days
         @token_ttl = 55.minutes
+        @touch_debounce = 1.second
       end
 
       attr_reader :mode
