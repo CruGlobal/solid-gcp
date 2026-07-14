@@ -7,7 +7,7 @@ class PerUserDigestJob < ApplicationJob
 
   def perform(user_id)
     JobRun.record!(self.class.name, arguments, note: "digest start user=#{user_id}")
-    sleep 0.2
+    sleep Float(ENV.fetch("DEMO_HOLD_SECONDS", "0.2")) # see SingletonTickJob re: DEMO_HOLD_SECONDS
     JobRun.record!(self.class.name, arguments, note: "digest done user=#{user_id}")
   end
 end

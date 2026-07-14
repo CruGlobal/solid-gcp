@@ -28,4 +28,6 @@ test:
 # ensure the database is located in a persisted volume.
 production:
   <<: *default
-  # database: path/to/persistent/storage/production.sqlite3
+  # Ephemeral in-container sqlite (Cloud Run, min-instances=0, max-instances=1).
+  # Sandbox prove-out only; not durable across cold starts.
+  database: storage/production.sqlite3

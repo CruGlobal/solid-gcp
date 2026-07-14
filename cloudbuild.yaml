@@ -1,0 +1,28 @@
+# Cloud Build: build the dummy app image from the REPO ROOT context so the
+# `path: "../gem"` dependency (dummy/Gemfile.lock -> remote: ../gem) resolves.
+# Uses Dockerfile.cloudrun. Tag defaults to the git short sha via _TAG.
+#
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --substitutions=_TAG=$(git rev-parse --short HEAD) \
+#     --project=cru-mattdrees-sandbox-poc .
+
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/cru-mattdrees-sandbox-poc/solid-gcp/dummy
+  _TAG: latest
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.cloudrun
+      - -t
+      - ${_IMAGE}:${_TAG}
+      - .
+
+images:
+  - ${_IMAGE}:${_TAG}
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY

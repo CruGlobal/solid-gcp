@@ -1,0 +1,88 @@
+# syntax=docker/dockerfile:1
+# check=error=true
+
+# Repo-ROOT-context variant of dummy/Dockerfile, used by Cloud Build
+# (cloudbuild.yaml). The dummy app depends on the gem via `path: "../gem"`
+# (dummy/Gemfile.lock -> `remote: ../gem`), which lives OUTSIDE the dummy/
+# directory. Building from the repo root lets us COPY both `gem/` and `dummy/`
+# so the relative layout (/rails + /gem sibling) is preserved in the image and
+# bundler resolves the path gem.
+#
+# dummy/Dockerfile remains the canonical single-dir build for local
+# `docker build` from dummy/ (it assumes the gem is published/vendored).
+#
+# Build (from repo root):
+#   docker build -f Dockerfile.cloudrun -t dummy .
+# The SAME image serves the Cloud Run service (default CMD boots the server)
+# and the Cloud Run Job (command overridden to `bin/rails solid_gcp:execute`).
+
+ARG RUBY_VERSION=3.4.7
+FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
+
+# Rails app lives here; the path gem sibling lands at /gem (matches ../gem).
+WORKDIR /rails
+
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y curl libjemalloc2 libvips sqlite3 && \
+    ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+ENV RAILS_ENV="production" \
+    BUNDLE_DEPLOYMENT="1" \
+    BUNDLE_PATH="/usr/local/bundle" \
+    BUNDLE_WITHOUT="development" \
+    LD_PRELOAD="/usr/local/lib/libjemalloc.so"
+
+FROM base AS build
+
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y build-essential git libvips libyaml-dev pkg-config && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+# The path gem must exist before `bundle install` resolves `path: "../gem"`.
+COPY gem /gem
+
+# Install application gems
+COPY dummy/vendor/* ./vendor/
+COPY dummy/Gemfile dummy/Gemfile.lock ./
+
+RUN bundle install && \
+    rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
+    bundle exec bootsnap precompile -j 1 --gemfile
+
+# Copy application code
+COPY dummy/ .
+
+RUN bundle exec bootsnap precompile -j 1 app/ lib/
+
+# production.rb eagerly ENV.fetch-es the SolidGcp vars at boot, and
+# assets:precompile boots the production env. Supply throwaway values (alongside
+# SECRET_KEY_BASE_DUMMY) so the build needs no real config/secrets; real values
+# are injected at deploy time.
+RUN SECRET_KEY_BASE_DUMMY=1 \
+    SOLID_GCP_PROJECT=build \
+    SOLID_GCP_LOCATION=us-central1 \
+    SOLID_GCP_PUSH_BASE_URL=https://build.invalid \
+    SOLID_GCP_INVOKER_SA=build@build.invalid \
+    ./bin/rails assets:precompile
+
+# Final stage for app image
+FROM base
+
+RUN groupadd --system --gid 1000 rails && \
+    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
+
+# The path gem is referenced at runtime too; carry it over and make it readable.
+COPY --from=build --chown=rails:rails /gem /gem
+
+USER 1000:1000
+
+COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
+COPY --chown=rails:rails --from=build /rails /rails
+
+ENTRYPOINT ["/rails/bin/docker-entrypoint"]
+
+ENV PORT="8080"
+EXPOSE 8080
+
+CMD ["./bin/thrust", "./bin/rails", "server"]

@@ -107,3 +107,15 @@ bin/rails test test/system/cable_live_refresh_test.rb
 
 Needs ADC that can write Firestore and `signBlob` as the signer SA
 (matt.drees's user ADC qualifies).
+
+## Deployed sandbox instance (2026-07-14)
+
+`https://solid-gcp-dummy-178891842216.us-central1.run.app` — service
+`solid-gcp-dummy` + Cloud Run Job `solid-gcp-dummy-import`, min0/max1, ephemeral
+sqlite. Build: `gcloud builds submit --config cloudbuild.yaml
+--substitutions=_TAG=$(git rev-parse --short HEAD) --project=cru-mattdrees-sandbox-poc .`
+from the repo root (Dockerfile.cloudrun; the path-gem needs repo-root context).
+Deploy caveats: service CMD is overridden to `./bin/rails server` (Thruster's
+HTTP_PORT proxying 502s on Cloud Run); the Job prepends `db:prepare` (ephemeral
+sqlite). Service env carries DEMO_HOLD_SECONDS=3 so concurrency-conflict demos
+actually overlap Cloud Tasks' ~1/s single-instance dispatch pacing.

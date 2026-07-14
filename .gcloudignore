@@ -1,0 +1,12 @@
+# Cloud Build context = repo root (Dockerfile.cloudrun needs gem/ + dummy/).
+# Trim large/irrelevant paths so uploads stay small. Do NOT exclude dummy's
+# storage/log/tmp dirs — their .keep files must ship so the dirs exist (owned by
+# the rails user) in the image; db:prepare writes storage/production.sqlite3.
+.git
+.github
+.idea
+docs
+terraform
+dummy/.bundle
+dummy/node_modules
+**/*.sqlite3
