@@ -6,6 +6,25 @@ gem needs at runtime; it does **not** provision the Rails app image, the Cloud R
 service/job themselves, or individual Cloud Scheduler jobs (those are handled
 elsewhere — see below).
 
+## Module home & consumption
+
+This module lives here (rather than in cru-terraform) because it is
+contract-coupled to the `solid_gcp` gem — per the
+[colocated-modules policy](https://github.com/CruGlobal/cru-terraform-modules/blob/main/docs/colocated-modules.md).
+This repo's git tags equal the gem version, so `?ref=vX.Y.Z` pins gem + module
+together.
+
+- **Real instantiation** (config + state) belongs in **cru-terraform**, sourcing:
+  ```hcl
+  source = "git@github.com:CruGlobal/solid-gcp.git//terraform/modules/solid_gcp?ref=vX.Y.Z"
+  ```
+- **`sandbox/`** is a temporary, hand-applied exception for
+  `cru-mattdrees-sandbox-poc` only — not managed state. It will graduate to
+  cru-terraform.
+- **Guardrail:** root `CODEOWNERS` routes `/terraform/` to
+  `@CruGlobal/devops-engineering-team`, and the shared reusable CI workflow
+  (`.github/workflows/terraform.yml`) runs fmt/validate/tflint on changes here.
+
 ## Layout
 
 ```

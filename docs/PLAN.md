@@ -132,9 +132,11 @@ docs/         this plan, design notes
 
 ## Unresolved questions
 
-- Gem name `solid_gcp` OK? (adapter `:solid_gcp`)
+- ~~Gem name `solid_gcp` OK? (adapter `:solid_gcp`)~~ Resolved: approved.
 - Semaphore default `duration` 15 min OK? (SQ default is 3 min; jira import runs hours —
   import path should set explicit long duration or rely on its existing controller CAS)
 - Flightdeck per-minute recurring jobs: accept minute-ly wakes for now?
 - Solid Cache/Cable out of scope for this repo — agreed?
-- Terraform here vs cru-terraform conventions — sandbox-only OK for now?
+- ~~Terraform here vs cru-terraform conventions — sandbox-only OK for now?~~ Resolved:
+  colocated-module policy — module lives here (gem-coupled), instantiation/state in
+  cru-terraform, sandbox/ temporary exception.
