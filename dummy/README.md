@@ -91,3 +91,19 @@ SOLID_GCP_INVOKER_SA, SOLID_GCP_CLOUD_RUN_JOB
    Cloud Scheduler with `bin/rails solid_gcp:scheduler:sync`; each entry POSTs
    (OIDC) to `/solid_gcp/recurring/<key>`.
 
+
+## Cable e2e (live Firestore refresh)
+
+`test/system/cable_live_refresh_test.rb` proves the full chain (touch → Firestore →
+onSnapshot → Turbo morph, no reload) against the real sandbox. Skipped unless gated:
+
+```
+SOLID_GCP_CABLE_E2E=1 \
+SOLID_GCP_CABLE_PROJECT=cru-mattdrees-sandbox-poc \
+SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG="$(cd ../terraform/sandbox && tofu output -json firebase_web_config)" \
+SOLID_GCP_CABLE_SIGNER_EMAIL=178891842216-compute@developer.gserviceaccount.com \
+bin/rails test test/system/cable_live_refresh_test.rb
+```
+
+Needs ADC that can write Firestore and `signBlob` as the signer SA
+(matt.drees's user ADC qualifies).

@@ -11,6 +11,7 @@ const registry = {
   app: null,
   db: null,
   unsubscribes: new Map(), // doc -> unsubscribe fn
+  live: new Set(),         // docs whose initial snapshot has arrived (listening)
   refreshTimer: null,
   config: null
 }
@@ -88,7 +89,14 @@ function attachListener(docPath) {
     ref,
     (snapshot) => {
       if (!seenInitial) {
-        seenInitial = true // skip the initial snapshot
+        // Skip the initial snapshot: it carries the doc's state *at listen
+        // time* (which may already reflect earlier touches, esp. a doc that
+        // persists across page loads). Only a bump that arrives AFTER this
+        // point is a real "something changed, refresh" signal. Marking the doc
+        // live here — once the initial snapshot has actually landed — is the
+        // guarantee that any subsequent touch fires the callback again.
+        seenInitial = true
+        markListening(docPath)
         return
       }
       scheduleRefresh()
@@ -98,6 +106,7 @@ function attachListener(docPath) {
         // Token expired (~1h) or permission changed: re-auth and re-attach once.
         unsubscribe()
         registry.unsubscribes.delete(docPath)
+        registry.live.delete(docPath)
         await connectAll(true)
       } else {
         console.error("[solid-gcp-cable] snapshot error", error)
@@ -105,6 +114,22 @@ function attachListener(docPath) {
     }
   )
   registry.unsubscribes.set(docPath, unsubscribe)
+}
+
+// Announce that a doc is now being listened to (initial snapshot received, so
+// later touches are guaranteed to surface). Tests wait on this before writing;
+// app code can listen too. The attribute value is the count of live docs.
+function markListening(docPath) {
+  registry.live.add(docPath)
+  document.documentElement.setAttribute(
+    "data-solid-gcp-cable-listening",
+    String(registry.live.size)
+  )
+  document.dispatchEvent(
+    new CustomEvent("solid-gcp-cable:listening", {
+      detail: { doc: docPath, docs: Array.from(registry.live) }
+    })
+  )
 }
 
 function isAuthError(error) {
@@ -151,5 +176,10 @@ export default class extends Controller {
       unsubscribe()
       registry.unsubscribes.delete(entry.doc)
     }
+    registry.live.delete(entry.doc)
+    document.documentElement.setAttribute(
+      "data-solid-gcp-cable-listening",
+      String(registry.live.size)
+    )
   }
 }

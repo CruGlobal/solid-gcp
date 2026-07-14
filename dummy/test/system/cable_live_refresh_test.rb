@@ -52,6 +52,13 @@ class CableLiveRefreshTest < ApplicationSystemTestCase
     # Wait for the JobRuns section to be present; start from a known-empty state.
     assert_text "Recent JobRuns (0)"
 
+    # CRITICAL: wait until the Firestore listener is actually live (its initial
+    # snapshot has arrived) BEFORE writing. The controller skips that initial
+    # snapshot, so a touch that races ahead of it gets baked into the skipped
+    # snapshot and no "changed" callback ever fires. The controller marks
+    # <html data-solid-gcp-cable-listening> once listening; wait on that.
+    wait_for_cable_listening
+
     # Create a JobRun the way a completed demo job would, then run the enqueued
     # TouchJob so it bumps the live Firestore stream doc. (solid_gcp is :test in
     # this env, so we drain explicitly rather than relying on push delivery.)
@@ -69,6 +76,25 @@ class CableLiveRefreshTest < ApplicationSystemTestCase
   end
 
   private
+
+  # Block until the cable controller reports at least one live listener (initial
+  # snapshot received). Polls the DOM marker the controller sets.
+  def wait_for_cable_listening(timeout: 20)
+    deadline = Time.now + timeout
+    until listening?
+      raise Minitest::Assertion, "cable controller never became live (no listener attached within #{timeout}s)" if Time.now > deadline
+      sleep 0.1
+    end
+  end
+
+  def listening?
+    count = page.evaluate_script(
+      "parseInt(document.documentElement.getAttribute('data-solid-gcp-cable-listening') || '0', 10)"
+    )
+    count.to_i.positive?
+  rescue StandardError
+    false
+  end
 
   def dump_browser_logs
     logs = page.driver.browser.logs.get(:browser)
