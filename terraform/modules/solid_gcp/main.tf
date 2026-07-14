@@ -80,11 +80,14 @@ resource "google_cloud_run_v2_service_iam_member" "invoker_runs_service" {
 # roles/cloudtasks.enqueuer, granted per-queue (least privilege) rather than
 # project-wide, so the app can only create tasks on solid_gcp's own queues.
 resource "google_cloud_tasks_queue_iam_member" "app_enqueuer" {
-  for_each = google_cloud_tasks_queue.queue
+  # Keyed by var.queue_names (known at plan time) rather than the queue
+  # resources themselves — for_each over resources breaks first-apply on a
+  # fresh state (unknown keys force a -target dance).
+  for_each = toset(var.queue_names)
 
   project  = var.project_id
   location = var.region
-  name     = each.value.name
+  name     = google_cloud_tasks_queue.queue[each.value].name
   role     = "roles/cloudtasks.enqueuer"
   member   = "serviceAccount:${var.app_service_account_email}"
 }
