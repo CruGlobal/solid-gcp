@@ -55,6 +55,34 @@ terraform/
     below.
 - **API enablement** — `cloudtasks`, `cloudscheduler`, `run`, `iam`.
 
+### Cable component (`enable_cable`, default false)
+
+When `enable_cable = true` the module also provisions the Firestore-backed Turbo
+refresh streams (`SolidGcp::Cable`). These resources use the **google-beta**
+provider, so the consumer must pass one (`providers = { google = google,
+google-beta = google-beta }`). Created:
+
+- **Firestore** — `(default)` native-mode database (`firestore_location`, defaults
+  to `region`) + a TTL policy on `expires_at` for the streams collection
+  (`cable_collection`, default `solid_gcp_streams`) so stream docs self-reap.
+- **Firebase** — project add-on (`google_firebase_project`) + a web app; the web
+  SDK config (apiKey / authDomain / projectId) is surfaced as the
+  `firebase_web_config` output.
+- **Identity Platform** — `google_identity_platform_config` (enables Firebase Auth
+  so Rails-minted custom tokens work).
+- **Firestore security rules** — ruleset + release on `cloud.firestore`; allows only
+  doc-level `get` on `cable_collection`, gated on the token's `sgs` claim (no
+  writes, no list). Collection name is parameterized to match `cable_collection`.
+- **Runtime-SA IAM** — `roles/datastore.user` (project) + `roles/iam.serviceAccountTokenCreator`
+  granted to `app_service_account_email` **on itself** (so it can IAM-signBlob its
+  own Firebase custom tokens, no key file).
+
+Flaky-apply notes: `google_firebase_project` on an already-Firebase-enabled project
+and an existing `(default)` Firestore database must be **imported** rather than
+created (they 409 / already exist). `google_identity_platform_config` 409s if
+Identity Platform was already initialized. See the sandbox note below for exact
+import commands.
+
 ### IAM role choice for launching the Cloud Run Job
 
 The launcher calls the Cloud Run Admin API `jobs.run` **with container overrides**
@@ -76,6 +104,7 @@ The Rails app (dummy app, later Flightdeck) needs these env vars, mapping to
 | `SOLID_GCP_LOCATION` | `region` | queue/scheduler/job location |
 | `SOLID_GCP_PUSH_BASE_URL` | module output `push_base_url` | public base URL of the Cloud Run service; Cloud Tasks target + OIDC audience |
 | `SOLID_GCP_INVOKER_SA` | module output `invoker_service_account_email` | OIDC identity set on tasks and verified on receipt |
+| `SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG` | module output `firebase_web_config` | (cable only) JSON `{apiKey, authDomain, projectId}` for `cable.firebase_web_config`; apiKey is a public web identifier, not a secret |
 
 The app must **run as** `app_service_account_email` (the SA this module grants
 enqueuer / serviceAccountUser / run.developer to).
@@ -116,6 +145,34 @@ module "solid_gcp" {
   }
 }
 ```
+
+## Sandbox first-apply (imports needed)
+
+`sandbox/` has never been applied (no tfstate), so the first apply creates all the
+queue-side resources from scratch. But the sandbox project
+(`cru-mattdrees-sandbox-poc`) already has some cable resources live, which will
+**409 on create** — import them into state first, then apply:
+
+```sh
+cd sandbox
+terraform init
+
+# Firebase project add-on is already active (import id = project id):
+terraform import 'module.solid_gcp.google_firebase_project.cable[0]' cru-mattdrees-sandbox-poc
+
+# Firestore (default) database already exists (FIRESTORE_NATIVE):
+terraform import 'module.solid_gcp.google_firestore_database.cable[0]' '(default)'
+
+terraform apply
+```
+
+Notes on the sandbox as verified 2026-07-14:
+- All 5 cable APIs are already enabled — `google_project_service.cable_apis` is a
+  no-op (safe, not disabled on destroy).
+- Identity Platform config does **not** exist yet (`CONFIGURATION_NOT_FOUND`) —
+  `google_identity_platform_config.cable[0]` creates cleanly, no import.
+- If a later run hits a 409 on identity platform (already initialized), import it:
+  `terraform import 'module.solid_gcp.google_identity_platform_config.cable[0]' cru-mattdrees-sandbox-poc`
 
 ## Validate
 

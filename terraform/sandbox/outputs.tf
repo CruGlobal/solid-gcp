@@ -10,3 +10,8 @@ output "queue_names" {
 output "push_base_url" {
   value = module.solid_gcp.push_base_url
 }
+
+output "firebase_web_config" {
+  value       = module.solid_gcp.firebase_web_config
+  description = "Firebase web SDK config for the dummy app's cable.firebase_web_config."
+}

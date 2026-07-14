@@ -17,3 +17,20 @@ output "push_base_url" {
   value       = var.push_base_url
   description = "Echoed back for convenience; set as SOLID_GCP_PUSH_BASE_URL on the app."
 }
+
+# ---------------------------------------------------------------------------
+# Cable outputs (null when enable_cable is false)
+# ---------------------------------------------------------------------------
+output "firebase_web_config" {
+  value = var.enable_cable ? {
+    apiKey     = data.google_firebase_web_app_config.cable[0].api_key
+    authDomain = data.google_firebase_web_app_config.cable[0].auth_domain
+    projectId  = var.project_id
+  } : null
+  description = <<-EOT
+    Firebase web SDK config for SolidGcp.config.cable.firebase_web_config
+    (apiKey / authDomain / projectId). Feed to the app (e.g. as JSON env var
+    SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG). apiKey is a public web-app identifier,
+    not a secret. null when enable_cable is false.
+  EOT
+}

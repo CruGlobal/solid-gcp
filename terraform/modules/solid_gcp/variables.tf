@@ -120,6 +120,50 @@ variable "app_service_account_email" {
     It creates Cloud Tasks tasks bearing the invoker SA's OIDC identity and launches
     the Cloud Run Job, so it receives: cloudtasks.enqueuer on each queue,
     iam.serviceAccountUser on the invoker SA, and (if cloud_run_job_name set)
-    run.developer on the job.
+    run.developer on the job. When enable_cable is set it also gets datastore.user
+    and serviceAccountTokenCreator-on-itself (see cable.tf).
   EOT
+}
+
+# ---------------------------------------------------------------------------
+# Cable component (SolidGcp::Cable) — see cable.tf
+# ---------------------------------------------------------------------------
+variable "enable_cable" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Provision the Cable component infra (Firestore realtime streams + Firebase
+    Auth custom tokens): Firestore "(default)" database + TTL policy, Firebase
+    project add-on + web app, Identity Platform config, Firestore security rules,
+    and runtime-SA IAM. Requires a configured google-beta provider to be passed
+    to the module. Leave false for a queue-only deployment.
+  EOT
+}
+
+variable "firestore_location" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    Firestore database location id. Defaults to var.region when null. NOTE:
+    Firestore multi-region ids (e.g. "nam5", "eur3") differ from Cloud Run region
+    names; single-region ids like "us-central1" are valid and fine for the sandbox.
+    Immutable once the database exists. Only used when enable_cable is true.
+  EOT
+}
+
+variable "cable_collection" {
+  type        = string
+  default     = "solid_gcp_streams"
+  description = <<-EOT
+    Firestore collection holding one doc per stream. Must match
+    SolidGcp.config.cable.collection and the shipped Stimulus controller's doc
+    path. Parameterizes the TTL field policy and the security rules. Only used
+    when enable_cable is true.
+  EOT
+}
+
+variable "firebase_web_app_display_name" {
+  type        = string
+  default     = "Solid GCP Cable"
+  description = "Display name for the Firebase web app. Only used when enable_cable is true."
 }
