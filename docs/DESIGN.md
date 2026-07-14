@@ -204,3 +204,122 @@ or shared). Entry: `class:`/`command:`, `args:`, `queue:`, `schedule:` (parse wi
 - OIDC verifier: unit-test with stubbed verification.
 - Cloud Tasks backend: task construction (stub client, assert request shape).
 ```
+
+---
+
+# Cable component (`SolidGcp::Cable`)
+
+Optional module — a queue-only adopter never loads it (no-op unless `cable.mode`
+set) and it adds **no gem dependencies**: all Firestore/IAM traffic goes over REST
+using `googleauth` (already a dep) — no grpc/google-cloud-firestore.
+
+## Gem layout additions
+
+```
+lib/solid_gcp/cable.rb                       # touch/touch_later API, mode switch
+lib/solid_gcp/cable/stream_name.rb           # streamables → name; sign/verify
+lib/solid_gcp/cable/firestore.rb             # REST commit (increment transform)
+lib/solid_gcp/cable/custom_token.rb          # Firebase custom token via IAM signBlob REST
+lib/solid_gcp/cable/test_sink.rb             # :test mode capture
+app/jobs/solid_gcp/cable/touch_job.rb        # touch_later rides the queue component
+app/controllers/solid_gcp/cable_tokens_controller.rb
+app/helpers/solid_gcp/cable_helper.rb
+app/javascript/solid_gcp_cable_controller.js # canonical Stimulus controller (copied)
+lib/generators/solid_gcp/cable_install/...   # copies JS controller + firestore.rules
+```
+
+## Configuration (`SolidGcp.config.cable.*`)
+
+| key | default | notes |
+|---|---|---|
+| `mode` | `:off` | `:firestore` \| `:test` \| `:off` (no-op) |
+| `project` | `SolidGcp.config.project` | Firestore/Firebase project |
+| `database` | `"(default)"` | Firestore database id |
+| `collection` | `"solid_gcp_streams"` | must match rules + terraform |
+| `signer_email` | nil → ADC/metadata SA | SA whose key signs custom tokens (needs self `iam.serviceAccounts.signBlob`) |
+| `firebase_web_config` | `{}` | `{apiKey:, projectId:, ...}` exposed to the client helper |
+| `stream_ttl` | 30.days | sets `expires_at` on stream docs (Firestore TTL policy reaps) |
+| `token_ttl` | 55.minutes | custom-token exp (Firebase cap 1h) |
+
+## Server API
+
+- **Stream name**: streamables → each part `to_gid_param` if GlobalID-able else
+  `to_param`/`to_s`, joined `":"` (mirrors turbo-rails). **Doc id** =
+  `Digest::SHA256.hexdigest(stream_name)`. **Signed stream name** =
+  `Rails.application.message_verifier("solid_gcp/cable").generate(stream_name)`.
+- `SolidGcp::Cable.touch(*streamables)` — Firestore REST `commit` on the stream doc:
+  transform `increment(v, 1)` + set `touched_at` (server timestamp) and `expires_at`
+  (now + stream_ttl). Idempotent-safe; burst coalescing is the client's job.
+- `SolidGcp::Cable.touch_later(*streamables)` — enqueues `TouchJob` (Active Job →
+  the queue component). Flightdeck's `broadcast_refresh_later_to` swap-in.
+- `:test` mode: `TestSink.touches` records stream names; `:off`: no-op.
+
+## Token endpoint
+
+`POST /solid_gcp/cable/token`, JSON `{signed_stream_names: [..]}` (same-origin,
+CSRF-protected, session/cookies as the host app). For each name: verify signature
+(401 on any failure). Mint custom token: RS256 JWT, `iss`=`sub`=signer_email,
+`aud`=`https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit`,
+`uid`=SHA256 of sorted doc ids (no user identity needed — authz lives in claims),
+claims `{"sgs": [doc ids]}`. Signature via IAM Credentials REST `signBlob`
+(runtime SA signs as itself; no key file). **Claims cap 1000 bytes** → reject >10
+streams per request (422) — a page should never need more. Response
+`{"token": jwt}`.
+
+## Client (Stimulus controller, copied by generator)
+
+- Helper `firestore_stream_from(*streamables)` →
+  `<div hidden data-controller="solid-gcp-cable" data-solid-gcp-cable-signed-name-value="…" data-solid-gcp-cable-doc-value="<collection>/<doc id>">`.
+  Helper `solid_gcp_cable_config_tag` → `<script type="application/json" id="solid-gcp-cable-config">`
+  with firebase_web_config + token endpoint path.
+- Controller behavior: on connect, register stream in a page-level module registry;
+  microtask-debounced single `fetch` of the token for all registered streams → one
+  `signInWithCustomToken` → one `onSnapshot` per doc. Skip the initial snapshot;
+  on any subsequent snapshot, debounce 300ms, then `Turbo.session.refresh(location.href)`
+  when Turbo ≥8 is present, else dispatch `solid-gcp-cable:refresh` on `document`.
+  On disconnect (page nav), unsubscribe listeners. Token expiry (~1h): on
+  `permission-denied`/token-expired listener error, re-fetch token and re-attach once.
+- Host app owns the `firebase` JS dep (`firebase/app`, `firebase/auth`,
+  `firebase/firestore` — full, not `lite`; lite lacks `onSnapshot`).
+
+## Firestore security rules (template shipped; terraform deploys)
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    match /solid_gcp_streams/{stream} {
+      allow get: if request.auth != null && stream in request.auth.token.sgs;
+    }
+  }
+}
+```
+No client writes, no list. Doc-level `onSnapshot` requires only `get`.
+
+## Terraform additions (same module, `enable_cable` flag, google-beta where needed)
+
+- `google_firestore_database` (native mode, region), `google_firestore_field` TTL
+  policy on `expires_at` for the streams collection.
+- `google_firebase_project`, `google_firebase_web_app` (+ web-app config data source
+  → outputs for `firebase_web_config`).
+- `google_identity_platform_config` (enables Firebase Auth for custom tokens).
+- `google_firebaserules_ruleset` + `google_firebaserules_release` (`cloud.firestore`).
+- IAM on runtime SA: `roles/datastore.user` (project) +
+  `roles/iam.serviceAccountTokenCreator` on **itself** (signBlob).
+- APIs: firestore, firebase, identitytoolkit, firebaserules, iamcredentials.
+
+## Dummy app demo
+
+importmap-rails + turbo-rails + stimulus-rails; `firebase` pinned to gstatic ESM CDN.
+Dashboard: `firestore_stream_from :job_runs`; `JobRun` `after_create_commit`
+→ `SolidGcp::Cable.touch_later(:job_runs)` — enqueue a demo job, watch the
+dashboard morph when it completes. E2e proof on sandbox.
+
+## Testing requirements
+
+- StreamName: streamable coercion, sign/verify round-trip, tamper → verify fails.
+- Firestore REST: commit request shape (stubbed HTTP) — increment transform, TTL field.
+- CustomToken: JWT header/claims shape, aud/iss/uid/sgs, signBlob payload (stubbed).
+- Tokens controller: happy path, bad signature 401, >10 streams 422, CSRF enforced.
+- touch/touch_later: `:test` sink capture; TouchJob enqueues via adapter.
+- Cable off: everything no-ops, no constants force-loaded needing config.

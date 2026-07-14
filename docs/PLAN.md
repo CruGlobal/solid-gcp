@@ -1,7 +1,8 @@
 # Solid GCP — product plan
 
-GCP-centric Active Job backend replacing Solid Queue, enabling true scale-to-zero for
-both the Rails app (Cloud Run) and the database (self-hosted Neon, ../neon-gcp).
+GCP-centric replacement for Solid Queue (Active Job backend) and, partially, Solid
+Cable (Turbo refresh streams), enabling true scale-to-zero for both the Rails app
+(Cloud Run) and the database (self-hosted Neon, ../neon-gcp).
 Target app: ../flightdeck. This repo: the `solid_gcp` gem + GCP infra (terraform) +
 a dummy Rails app proving the contracts before folding into Flightdeck.
 
@@ -93,6 +94,50 @@ Failure of the execution → recorded in failed_jobs by the runner process itsel
 jobs wake the service every minute — inherent to the workload, flagged for later rework;
 scale-to-zero still wins nights/weekends only if those are rethought (out of scope here).
 
+## Cable component (partial Solid Cable replacement)
+
+Added 2026-07-14. Solid Cable's cost problem isn't the backend — it's the **browser
+connection**: every `turbo_stream_from` holds a `/cable` websocket, which is one
+long-lived in-flight request, so a request-billed Cloud Run instance never idles
+(Flightdeck June: $45.61 app CPU, ~0.6 instances pinned 24/7 by forgotten tabs).
+Swapping the pub/sub backend changes nothing; the connection itself must move off
+Cloud Run. GCP's managed answer is **Firestore realtime listeners** (Firebase).
+
+### Core idea: signal, don't stream
+
+Firestore listeners are **state-based**, not message-stream: a client that
+reconnects sees current state for free — no replay problem, no cursors. So we don't
+ship Turbo Stream payloads through Firestore; we ship a **dirty bit**:
+
+- One Firestore doc per stream (`solid_gcp_streams/{sha256(stream name)}`), body
+  `{v: increment, touched_at}`. Rails "broadcasts" by incrementing `v`
+  (`SolidGcp::Cable.touch(*streamables)` or `touch_later` via the queue component).
+- A small Stimulus controller (`onSnapshot`) sees `v` change → triggers a Turbo
+  page **refresh** (morph, scroll-preserving). Matches turbo-rails 8's
+  broadcast-refresh model, which is all Flightdeck uses for its 5 `turbo_stream_from`
+  views.
+- Auth: Rails mints **Firebase custom tokens** (JWT signed via IAM signBlob with the
+  runtime SA — no key files) at `/solid_gcp/cable/token`. The page carries signed
+  stream names (same trust model as `turbo_stream_from`); the endpoint verifies them
+  and embeds the stream doc ids as token claims; Firestore security rules allow
+  reading only those docs. Firebase Auth in prod: approved.
+
+### Scope
+
+- **In:** Turbo broadcast-refresh streams (the instance-pinning workload).
+- **Out (stays on ActionCable):** Yjs/CRDT collab relay (DocumentSync/Presence) —
+  Firestore is unfit (per-write cost, ~1 write/sec/doc sustained limit, latency).
+  Yjs disconnect/reconnect is safe by construction, so the hidden-tab-disconnect
+  rider (filed in Flightdeck) contains that remaining socket's cost.
+- Host app owns the Firebase JS SDK dependency (works under importmap CDN pins and
+  jsbundling/esbuild — verified against Flightdeck's esbuild, ~164KB gz lazy chunk).
+  Gem ships the server side + a copyable Stimulus controller, turbo-rails style.
+
+### Cost
+
+Writes $0.09–0.18/100k, reads (per listener per change) $0.03–0.06/100k, listener
+hours free tier–dominated: **< $1/mo** at Flightdeck scale, vs ~$45/mo of pinned vCPU.
+
 ## Local development / test
 
 - `:solid_gcp_local` adapter variant: in-process thread scheduler POSTs to the local
@@ -105,6 +150,9 @@ scale-to-zero still wins nights/weekends only if those are rethought (out of sco
 Module for the dummy app (later reusable for Flightdeck): Cloud Tasks queues
 (default, ingest, mailers), invoker + enqueuer service accounts, IAM, Cloud Scheduler
 jobs from recurring.yml, Cloud Run service + Cloud Run Job (import), Artifact Registry.
+Cable (behind `enable_cable`): Firestore database + TTL policy, Firebase project
+add-on + web app (client config), Identity Platform (custom-token auth), security
+rules ruleset/release, runtime-SA IAM (datastore.user + self signBlob).
 Sandbox project: cru-mattdrees-sandbox-poc.
 
 ## Repo layout
@@ -127,8 +175,12 @@ docs/         this plan, design notes
   delayed escalation, discard singleton, blocking per-user, fake long import via
   cloud_run_job), local adapter demo, integration tests.
 5. **Terraform + real GCP smoke test** (sandbox project).
-6. Later, separate effort: fold into Flightdeck (swap adapter, keep queue.yml isolation
-  semantics via Cloud Tasks queue configs, decide Solid Cache/Cable fate).
+6. **Cable component** — `SolidGcp::Cable` (touch API, token endpoint, helper,
+  Stimulus controller, generator), terraform Firestore/Firebase additions, dummy-app
+  live-refresh demo (dashboard refreshes when jobs run) + sandbox e2e smoke.
+7. Later, separate effort: fold into Flightdeck (swap adapter, keep queue.yml isolation
+  semantics via Cloud Tasks queue configs; swap `broadcast_refresh_later_to` call
+  sites to `touch_later`; decide Solid Cache fate).
 
 ## Unresolved questions
 
@@ -136,7 +188,9 @@ docs/         this plan, design notes
 - Semaphore default `duration` 15 min OK? (SQ default is 3 min; jira import runs hours —
   import path should set explicit long duration or rely on its existing controller CAS)
 - Flightdeck per-minute recurring jobs: accept minute-ly wakes for now?
-- Solid Cache/Cable out of scope for this repo — agreed?
+- ~~Solid Cache/Cable out of scope for this repo — agreed?~~ Resolved 2026-07-14:
+  Cable partially in scope (Turbo refresh via Firestore; Yjs stays on ActionCable).
+  Solid Cache still out of scope.
 - ~~Terraform here vs cru-terraform conventions — sandbox-only OK for now?~~ Resolved:
   colocated-module policy — module lives here (gem-coupled), instantiation/state in
   cru-terraform, sandbox/ temporary exception.
