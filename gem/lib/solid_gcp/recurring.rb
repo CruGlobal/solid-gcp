@@ -32,7 +32,14 @@ module SolidGcp
         raise ConfigurationError, "recurring schedule #{schedule.inspect} is not cron-expressible"
       end
 
-      parsed.to_cron_s
+      cron = parsed.to_cron_s
+      # Cloud Scheduler is minute-granular; reject sub-minute (6-field) crons.
+      if cron.split(/\s+/).size > 5
+        raise ConfigurationError,
+          "recurring schedule #{schedule.inspect} is sub-minute; Cloud Scheduler is minute-granular"
+      end
+
+      cron
     end
 
     # Enqueues the entry's job (or RecurringCommandJob for command: entries).

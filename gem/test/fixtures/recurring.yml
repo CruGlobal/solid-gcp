@@ -1,0 +1,15 @@
+test:
+  cleanup:
+    class: RecordingJob
+    args: [ "cleanup" ]
+    queue: maintenance
+    schedule: every day at 3am
+  heartbeat:
+    class: PlainJob
+    schedule: "*/5 * * * *"
+  run_command:
+    command: "RAN[:command] += 1"
+    schedule: every hour
+  too_frequent:
+    class: PlainJob
+    schedule: every 2 seconds
