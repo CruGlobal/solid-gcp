@@ -22,8 +22,10 @@ module SolidGcp
       def run(path, envelope)
         wrap do
           case path
-          when Dispatcher::PERFORM_PATH        then Receiver.receive(envelope)
-          when Dispatcher::LAUNCH_PATH         then CloudRunJobLauncher.launch(envelope)
+          # No Cloud Run Jobs locally: execute launch envelopes in-process,
+          # same as `solid_gcp:execute` would inside the job container.
+          when Dispatcher::PERFORM_PATH, Dispatcher::LAUNCH_PATH
+            Receiver.receive(envelope)
           when SweepScheduler::SWEEP_PATH      then Sweep.run
           end
         end

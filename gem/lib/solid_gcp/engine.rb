@@ -2,6 +2,7 @@
 
 require "rails/engine"
 require "active_job"
+require "active_job/queue_adapters/solid_gcp_adapter"
 
 module SolidGcp
   class Engine < ::Rails::Engine
