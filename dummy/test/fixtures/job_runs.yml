@@ -1,0 +1,2 @@
+# Intentionally empty: tests create JobRun rows by draining jobs and assert on
+# counts, so there are no seed fixtures.
