@@ -6,6 +6,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="application-name" content="Dummy">
     <meta name="mobile-web-app-capable" content="yes">
+    <%# Turbo page refreshes (triggered by the SolidGcp::Cable client) morph the
+        DOM in place and keep scroll, so new rows appear without a jarring reload. %>
+    <meta name="turbo-refresh-method" content="morph">
+    <meta name="turbo-refresh-scroll" content="preserve">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
 
@@ -20,6 +24,7 @@
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
     <%= stylesheet_link_tag :app %>
+    <%= javascript_importmap_tags %>
   </head>
 
   <body>

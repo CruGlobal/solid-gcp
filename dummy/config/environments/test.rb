@@ -54,4 +54,8 @@ Rails.application.configure do
   # Solid GCP: in-memory test backend. Enqueue records envelopes;
   # SolidGcp::Testing.drain runs them. OIDC verification off in test.
   config.solid_gcp.mode = :test
+
+  # SolidGcp::Cable in capture mode: touches land in SolidGcp::Cable::TestSink
+  # instead of hitting Firestore, so the realtime wiring is testable offline.
+  config.solid_gcp.cable.mode = :test
 end

@@ -1,5 +1,12 @@
 <% content_for :title, "Solid GCP dummy dashboard" %>
 
+<%# SolidGcp::Cable demo: config for the Firestore client + a stream element the
+    Stimulus controller subscribes to. When a JobRun is created, its
+    after_create_commit touch_laters :job_runs, bumping the stream doc, and the
+    controller triggers a Turbo morph refresh — new rows appear with no reload. %>
+<%= solid_gcp_cable_config_tag %>
+<%= firestore_stream_from :job_runs %>
+
 <style>
   body { font-family: system-ui, sans-serif; margin: 1.5rem; max-width: 70rem; }
   h1 { margin-bottom: 0.25rem; }

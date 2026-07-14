@@ -11,7 +11,14 @@ class JobsFlowTest < ActiveSupport::TestCase
 
   setup do
     SolidGcp::Testing.clear!
+    # These tests assert exact queue contents. Cable is :test in this env, so
+    # JobRun#after_create_commit would otherwise enqueue TouchJobs into the same
+    # queue and skew the accounting. Disable cable here; it has its own tests.
+    @cable_mode = SolidGcp.config.cable.mode
+    SolidGcp.config.cable.mode = :off
   end
+
+  teardown { SolidGcp.config.cable.mode = @cable_mode }
 
   # --- helpers ---------------------------------------------------------------
 

@@ -11,6 +11,11 @@ gem "sqlite3", ">= 2.1"
 gem "solid_gcp", path: "../gem"
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
+
+# JS via import maps + Hotwire, for the SolidGcp::Cable realtime-refresh demo.
+gem "importmap-rails"
+gem "turbo-rails"
+gem "stimulus-rails"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
 gem "jbuilder"
 # Use Redis adapter to run Action Cable in production

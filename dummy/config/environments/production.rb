@@ -97,4 +97,13 @@ Rails.application.configure do
   config.solid_gcp.invoker_service_account = ENV.fetch("SOLID_GCP_INVOKER_SA")
   # Cloud Run Job that runs FakeImportJob via `bin/rails solid_gcp:execute`.
   config.solid_gcp.cloud_run_job_name      = ENV.fetch("SOLID_GCP_CLOUD_RUN_JOB", "dummy-import-runner")
+
+  # SolidGcp::Cable realtime demo. Enabled only when a Firestore project is set,
+  # so the queue-only deployment path stays network-free for cable.
+  if ENV["SOLID_GCP_CABLE_PROJECT"].present?
+    config.solid_gcp.cable.mode                = :firestore
+    config.solid_gcp.cable.project             = ENV["SOLID_GCP_CABLE_PROJECT"]
+    config.solid_gcp.cable.firebase_web_config = JSON.parse(ENV["SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG"] || "{}")
+    config.solid_gcp.cable.signer_email        = ENV["SOLID_GCP_CABLE_SIGNER_EMAIL"] # optional; nil -> ADC/metadata SA
+  end
 end

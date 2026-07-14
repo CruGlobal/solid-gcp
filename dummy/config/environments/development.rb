@@ -77,4 +77,14 @@ Rails.application.configure do
   # creds needed; OIDC skipped outside production. config.solid_gcp is the live
   # SolidGcp.config object.
   config.solid_gcp.mode = :local
+
+  # SolidGcp::Cable realtime demo. Off unless a Firestore project is supplied via
+  # env, so `bin/rails server` works with zero GCP setup. Point these at the
+  # sandbox to watch the dashboard morph in new JobRuns without a manual reload.
+  if ENV["SOLID_GCP_CABLE_PROJECT"].present?
+    config.solid_gcp.cable.mode                = :firestore
+    config.solid_gcp.cable.project             = ENV["SOLID_GCP_CABLE_PROJECT"]
+    config.solid_gcp.cable.firebase_web_config = JSON.parse(ENV["SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG"] || "{}")
+    config.solid_gcp.cable.signer_email        = ENV["SOLID_GCP_CABLE_SIGNER_EMAIL"] # optional; nil -> ADC/metadata SA
+  end
 end
