@@ -17,6 +17,7 @@ jobs:
         with:
           ruby-version: 3.4.7
           bundler-cache: true
+          working-directory: gem
       - run: bundle exec rake test
 
   dummy:
@@ -32,5 +33,6 @@ jobs:
         with:
           ruby-version: 3.4.7
           bundler-cache: true
+          working-directory: dummy
       - run: bin/rails db:prepare
       - run: bin/rails test
