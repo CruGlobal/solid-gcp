@@ -87,7 +87,9 @@ module SolidGcp
     setup do
       SolidGcp.config.mode = :test
       SolidGcp.config.verify_oidc = false
+      SolidGcp.config.project = "test-project"
       SolidGcp.config.cable.mode = :off
+      SolidGcp.config.cable.project = nil
       SolidGcp.config.cable.touch_debounce = 1.second
       SolidGcp::Cable.reset_missing_project_warning!
       SolidGcp::Cable::TestSink.clear!
