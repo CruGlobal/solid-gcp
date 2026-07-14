@@ -18,12 +18,6 @@ require "rails/test_unit/railtie"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
-# Rails 8.1's ActiveJob::QueueAdapters.lookup resolves `:solid_gcp` via bare
-# const_get with no auto-require, so the adapter constant must already be
-# defined. The gem's engine doesn't require it (see notes in dummy/README.md),
-# so we require it explicitly before `queue_adapter = :solid_gcp` is applied.
-require "active_job/queue_adapters/solid_gcp_adapter"
-
 module Dummy
   class Application < Rails::Application
     # Initialize configuration defaults for originally generated Rails version.

@@ -50,12 +50,9 @@ bin/rails runner 'PingJob.perform_later("hi"); sleep 1; puts JobRun.last&.note'
 ### `FakeImportJob` in local mode
 
 `perform_via :cloud_run_job` normally dispatches to `/launch`, which calls the
-Cloud Run Admin API — impossible without GCP creds. The gem exposes no hook to
-inject a fake launcher client, so `config/initializers/solid_gcp_local_cloud_run.rb`
-(development-only) reopens `SolidGcp::CloudRunJobLauncher` to run the same
-receiver path in-process — exactly what `bin/rails solid_gcp:execute` does on a
-real Cloud Run Job. Production uses the gem's real launcher untouched. See "Gem
-gaps" below.
+Cloud Run Admin API. In `:local` mode the gem executes launch envelopes
+in-process instead — exactly what `bin/rails solid_gcp:execute` does on a real
+Cloud Run Job — so no GCP creds are needed.
 
 ## Tests
 
@@ -94,15 +91,3 @@ SOLID_GCP_INVOKER_SA, SOLID_GCP_CLOUD_RUN_JOB
    Cloud Scheduler with `bin/rails solid_gcp:scheduler:sync`; each entry POSTs
    (OIDC) to `/solid_gcp/recurring/<key>`.
 
-## Gem gaps found (Rails 8.1)
-
-- **Adapter not auto-required.** Rails 8.1's `ActiveJob::QueueAdapters.lookup`
-  resolves `:solid_gcp` with a bare `const_get` and no auto-require, so
-  `ActiveJob::QueueAdapters::SolidGcpAdapter` must already be defined. The gem's
-  engine never requires it (the gem's own test_helper requires it manually), so
-  this app does `require "active_job/queue_adapters/solid_gcp_adapter"` in
-  `config/application.rb`. The engine should require or register the adapter.
-- **No local hook for `:cloud_run_job`.** In `:local` mode there is no way to
-  substitute a fake Cloud Run launcher, so `perform_via :cloud_run_job` jobs
-  cannot run without GCP creds unless the app monkey-patches the launcher (see
-  the development initializer above).
