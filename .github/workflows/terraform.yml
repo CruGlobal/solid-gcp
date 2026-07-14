@@ -4,15 +4,25 @@ on:
   pull_request:
     paths:
       - "terraform/**"
+      - ".github/workflows/terraform.yml"
+      - ".github/workflows/reusable-module-ci.yml"
+      - ".github/vendor/cru-terraform-modules/**"
   push:
     branches: [main]
     paths:
       - "terraform/**"
+      - ".github/workflows/terraform.yml"
+      - ".github/workflows/reusable-module-ci.yml"
+      - ".github/vendor/cru-terraform-modules/**"
 
 jobs:
   ci:
     # Colocated-module CI: shared fmt/validate/tflint from cru-terraform-modules.
-    # TODO: move the @colocated-module-tooling ref to a release tag once that branch merges.
-    uses: CruGlobal/cru-terraform-modules/.github/workflows/reusable-module-ci.yml@colocated-module-tooling
+    # TEMPORARILY calls a vendored local copy (see reusable-module-ci.yml header)
+    # while the colocated-module policy is discussed with devops.
+    # TODO: once decided, switch back to
+    #   CruGlobal/cru-terraform-modules/.github/workflows/reusable-module-ci.yml@<release tag>
+    # (requires that repo's Actions access setting to allow org repos).
+    uses: ./.github/workflows/reusable-module-ci.yml
     with:
       working_directory: terraform
