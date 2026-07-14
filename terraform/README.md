@@ -186,6 +186,8 @@ cd ../modules/solid_gcp && terraform init -backend=false && terraform validate
 
 (`tofu` works as a drop-in for `terraform` in the commands above.)
 
-## TODO
+## Notes
 - Artifact Registry repo `solid-gcp` (us-central1, docker) was created by hand
-  via gcloud for the dummy deploy — fold into the module.
+  via gcloud for the dummy deploy. Intentionally NOT in the module: image
+  registries belong to the consuming app's deploy infra (Flightdeck's lives in
+  cru-terraform), not to solid_gcp's contract surface.
