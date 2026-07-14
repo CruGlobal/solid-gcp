@@ -209,9 +209,12 @@ or shared). Entry: `class:`/`command:`, `args:`, `queue:`, `schedule:` (parse wi
 
 # Cable component (`SolidGcp::Cable`)
 
-Optional module — a queue-only adopter never loads it (no-op unless `cable.mode`
-set) and it adds **no gem dependencies**: all Firestore/IAM traffic goes over REST
-using `googleauth` (already a dep) — no grpc/google-cloud-firestore.
+Enabled by default (no adopters predate it — Flightdeck should not have to opt
+in): `cable.mode` defaults to `:firestore`, falling back to the queue component's
+`project`. If mode is `:firestore` but no project resolves, `touch`/`touch_later`
+warn once per process and no-op (bare local dev keeps working); set `:off` to opt
+out explicitly. Adds **no gem dependencies**: all Firestore/IAM traffic goes over
+REST using `googleauth` (already a dep) — no grpc/google-cloud-firestore.
 
 ## Gem layout additions
 
@@ -232,7 +235,7 @@ lib/generators/solid_gcp/cable_install/...   # copies JS controller + firestore.
 
 | key | default | notes |
 |---|---|---|
-| `mode` | `:off` | `:firestore` \| `:test` \| `:off` (no-op) |
+| `mode` | `:firestore` | `:firestore` \| `:test` \| `:off` (no-op); warn-once no-op when `:firestore` without a resolvable project |
 | `project` | `SolidGcp.config.project` | Firestore/Firebase project |
 | `database` | `"(default)"` | Firestore database id |
 | `collection` | `"solid_gcp_streams"` | must match rules + terraform |
@@ -240,6 +243,7 @@ lib/generators/solid_gcp/cable_install/...   # copies JS controller + firestore.
 | `firebase_web_config` | `{}` | `{apiKey:, projectId:, ...}` exposed to the client helper |
 | `stream_ttl` | 30.days | sets `expires_at` on stream docs (Firestore TTL policy reaps) |
 | `token_ttl` | 55.minutes | custom-token exp (Firebase cap 1h) |
+| `touch_debounce` | 1.second | trailing coalesce window for `touch_later`; `nil`/0 disables |
 
 ## Server API
 
@@ -253,6 +257,28 @@ lib/generators/solid_gcp/cable_install/...   # copies JS controller + firestore.
 - `SolidGcp::Cable.touch_later(*streamables)` — enqueues `TouchJob` (Active Job →
   the queue component). Flightdeck's `broadcast_refresh_later_to` swap-in.
 - `:test` mode: `TestSink.touches` records stream names; `:off`: no-op.
+
+### Touch debounce (server-side, trailing)
+
+A model firing N broadcasts in a burst (Flightdeck's WorkItem uses a 0.5s
+ThreadDebouncer today) must not produce N Firestore writes/snapshots. In-process
+timers are unreliable on request-billed Cloud Run (CPU throttled after the
+response), so the debounce rides Cloud Tasks **named-task dedup** — trailing-edge,
+cross-process, scale-to-zero safe:
+
+- `touch_later` computes bucket = the next `touch_debounce` boundary
+  (`(now / d).floor + 1) * d`) and enqueues TouchJob as a **named** task
+  `sgc-touch-<doc id first 16 hex>-<bucket epoch>` with `scheduleTime` = bucket.
+  Duplicate touches in the window hit ALREADY_EXISTS → swallowed (no task, no
+  write). Names embed the bucket so they are never reused (Cloud Tasks forbids
+  name reuse for ~1h after execution).
+- Guarantee: the **last** touch in any burst is always followed by exactly one
+  Firestore write within ≤ `touch_debounce` — the client never misses final state
+  (leading-edge throttling would).
+- `touch` (synchronous) writes immediately, no debounce.
+- Backends: cloud_tasks gains named-task + ALREADY_EXISTS support; local backend
+  emulates dedup with an in-memory set keyed by task name; test sink records every
+  `touch_later` (assertions shouldn't depend on wall-clock coalescing).
 
 ## Token endpoint
 
