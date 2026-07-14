@@ -1,0 +1,14 @@
+# Solid Queue's recurring.yml format. `bin/rails solid_gcp:scheduler:sync`
+# upserts one Cloud Scheduler job per key, each POSTing (OIDC) to
+# /solid_gcp/recurring/<key>, which enqueues through the normal machinery.
+# Schedules are parsed by fugit; sub-minute schedules are rejected (Cloud
+# Scheduler is minute-granular).
+
+ping_health:
+  class: PingJob
+  args: [ "recurring health ping" ]
+  schedule: every 5 minutes
+
+cleanup_old_runs:
+  command: "JobRun.where('ran_at < ?', 7.days.ago).delete_all"
+  schedule: every day at midnight
