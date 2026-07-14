@@ -5,4 +5,6 @@ SolidGcp::Engine.routes.draw do
   post "/launch"         => "tasks#launch"
   post "/sweep"          => "tasks#sweep"
   post "/recurring/:key" => "tasks#recurring"
+
+  post "/cable/token" => "cable_tokens#create"
 end

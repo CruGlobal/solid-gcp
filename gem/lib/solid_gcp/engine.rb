@@ -18,6 +18,13 @@ module SolidGcp
       end
     end
 
+    # Make cable view helpers available to host-app views (like turbo-rails).
+    initializer "solid_gcp.cable.helpers" do
+      ActiveSupport.on_load(:action_view) do
+        include SolidGcp::CableHelper
+      end
+    end
+
     initializer "solid_gcp.connects_to" do
       config.after_initialize do
         # Record picks up connects_to lazily; nothing to do here unless configured.

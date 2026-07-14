@@ -87,6 +87,8 @@ module SolidGcp
     setup do
       SolidGcp.config.mode = :test
       SolidGcp.config.verify_oidc = false
+      SolidGcp.config.cable.mode = :off
+      SolidGcp::Cable::TestSink.clear!
       SolidGcp::Testing.clear!
       SolidGcp.instance_variable_set(:@oidc_verifier, nil)
       [SolidGcp::Semaphore, SolidGcp::BlockedJob, SolidGcp::FailedJob].each(&:delete_all)

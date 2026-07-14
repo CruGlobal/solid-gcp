@@ -36,5 +36,36 @@ module SolidGcp
     def queue_name(active_job_queue)
       "#{queue_prefix}#{active_job_queue}"
     end
+
+    # Cable (Firestore-backed Turbo refresh) sub-config. No-op unless mode set.
+    def cable
+      @cable ||= CableConfiguration.new(self)
+    end
+
+    # Optional realtime-refresh component. Defaults keep it fully off and
+    # network-free until `mode` is set to :firestore or :test.
+    class CableConfiguration
+      attr_accessor :database, :collection, :signer_email,
+                    :firebase_web_config, :stream_ttl, :token_ttl
+      attr_writer :mode, :project
+
+      def initialize(parent)
+        @parent = parent
+        @mode = :off
+        @database = "(default)"
+        @collection = "solid_gcp_streams"
+        @signer_email = nil
+        @firebase_web_config = {}
+        @stream_ttl = 30.days
+        @token_ttl = 55.minutes
+      end
+
+      attr_reader :mode
+
+      # Defaults to the queue component's project when not set explicitly.
+      def project
+        @project || @parent.project
+      end
+    end
   end
 end

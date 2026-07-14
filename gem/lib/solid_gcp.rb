@@ -34,6 +34,7 @@ require "solid_gcp/backends/test"
 require "solid_gcp/backends/local"
 require "solid_gcp/backends/cloud_tasks"
 require "solid_gcp/testing"
+require "solid_gcp/cable"
 
 module SolidGcp
   class << self
