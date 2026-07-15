@@ -46,12 +46,12 @@ jobs:
       - name: Smoke test (boot, curl both emulators, no runtime jar download)
         run: |
           docker run -d --name smoke -p 8080:8080 -p 9099:9099 emulator-smoke
-          for i in $(seq 1 30); do
-            curl -sf localhost:8080 >/dev/null && break
+          for i in $(seq 1 60); do
+            curl -sf localhost:8080 >/dev/null && curl -sf localhost:9099 >/dev/null && break
             sleep 1
           done
-          echo "--- :8080 ---"; curl -s localhost:8080; echo
-          echo "--- :9099 ---"; curl -s localhost:9099; echo
+          echo "--- :8080 ---"; curl -s localhost:8080 || true; echo
+          echo "--- :9099 ---"; curl -s localhost:9099 || true; echo
           echo "--- container logs ---"; docker logs smoke
           curl -sf localhost:8080 | grep -q Ok
           curl -sf localhost:9099 | grep -q authEmulator
