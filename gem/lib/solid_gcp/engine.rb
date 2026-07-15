@@ -31,6 +31,12 @@ module SolidGcp
       end
     end
 
+    # server-only: dev stand-in for Cloud Scheduler ticks recurring.yml in-process.
+    # Gated to `server` so consoles, rake tasks, and runners never tick.
+    server do
+      SolidGcp::LocalRecurring.start if SolidGcp.config.mode == :local
+    end
+
     rake_tasks do
       load File.expand_path("../tasks/solid_gcp.rake", __dir__)
     end

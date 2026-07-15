@@ -141,6 +141,13 @@ config.solid_gcp.mode = :local
 Enqueued jobs are delivered by an in-process thread scheduler that honors delays and
 runs the same receiver path. OIDC verification is off by default outside production.
 
+A `:local` **server** process also ticks the current env's `recurring.yml` entries
+in-process — a dev stand-in for Cloud Scheduler. Each firing goes through the same
+enqueue path as `/recurring/:key` (so singleton `on_conflict:` semantics hold). Only
+server processes tick; consoles and rake tasks don't. Entries are env-scoped, so
+production-only entries stay inert in dev. Arg edits are picked up per firing; schedule
+changes need a server restart.
+
 ### Cable with the Firebase emulators
 
 Run the whole Cable flow (Firestore touch, custom-token mint, client sign-in + listen)
@@ -199,6 +206,9 @@ Each entry becomes one Cloud Scheduler job (`solid-gcp-<key>`) POSTing (OIDC) to
 `/solid_gcp/recurring/<key>`, which enqueues through the normal machinery (so singleton
 `on_conflict: :discard` still applies). Schedules are parsed with `fugit`; sub-minute
 schedules are rejected since Cloud Scheduler is minute-granular.
+
+In `:local` mode a server process ticks these entries in-process instead (see
+[Local development](#local-development)).
 
 ## Endpoints
 

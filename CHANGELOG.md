@@ -6,6 +6,9 @@ name the same tested combination.
 
 ## [Unreleased]
 
+- Local recurring ticker: in `:local` mode a server process ticks the current
+  env's `recurring.yml` entries in-process (dev stand-in for Cloud Scheduler),
+  through the same enqueue path as `/recurring/:key`. Consoles/rake don't tick.
 - Cable: Firebase emulator support. With `FIRESTORE_EMULATOR_HOST` /
   `FIREBASE_AUTH_EMULATOR_HOST` set (or the matching config attrs), the whole
   flow runs against the local emulators with no GCP credentials — project
