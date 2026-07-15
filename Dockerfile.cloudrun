@@ -55,16 +55,9 @@ COPY dummy/ .
 
 RUN bundle exec bootsnap precompile -j 1 app/ lib/
 
-# production.rb eagerly ENV.fetch-es the SolidGcp vars at boot, and
-# assets:precompile boots the production env. Supply throwaway values (alongside
-# SECRET_KEY_BASE_DUMMY) so the build needs no real config/secrets; real values
-# are injected at deploy time.
-RUN SECRET_KEY_BASE_DUMMY=1 \
-    SOLID_GCP_PROJECT=build \
-    SOLID_GCP_LOCATION=us-central1 \
-    SOLID_GCP_PUSH_BASE_URL=https://build.invalid \
-    SOLID_GCP_INVOKER_SA=build@build.invalid \
-    ./bin/rails assets:precompile
+# production.rb reads SOLID_GCP_* tolerantly (validated at first dispatch, not
+# boot), so precompile needs no SolidGcp env — just the standard dummy secret.
+RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
 
 # Final stage for app image
 FROM base
