@@ -26,7 +26,7 @@ module SolidGcp
       end
 
       def commit_url
-        "#{BASE}/projects/#{@config.project}/databases/#{database}/documents:commit"
+        "#{base}/projects/#{@config.project}/databases/#{database}/documents:commit"
       end
 
       def commit_body(doc_id)
@@ -50,6 +50,11 @@ module SolidGcp
 
       private
 
+      def base
+        host = @config.firestore_emulator_host
+        host ? "http://#{host}/v1" : BASE
+      end
+
       def document_path(doc_id)
         "projects/#{@config.project}/databases/#{database}/documents/#{@config.collection}/#{doc_id}"
       end
@@ -60,9 +65,14 @@ module SolidGcp
 
       def headers
         {
-          "Authorization" => "Bearer #{access_token}",
+          "Authorization" => "Bearer #{bearer}",
           "Content-Type" => "application/json"
         }
+      end
+
+      # The emulator accepts (and expects) the literal "owner" token; skip ADC.
+      def bearer
+        @config.firestore_emulator_host ? "owner" : access_token
       end
 
       def access_token

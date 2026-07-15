@@ -68,4 +68,27 @@ class CableFirestoreTest < SolidGcp::TestCase
 
     assert_raises(SolidGcp::Error) { build(http).touch("job_runs") }
   end
+
+  # Fails the test if any access token is requested (emulator mode must not).
+  class ExplodingAuthorizer
+    def fetch_access_token!
+      raise "authorizer should not be used in emulator mode"
+    end
+  end
+
+  test "emulator host routes at http://host/v1 with a bearer owner token" do
+    http = FakeHttp.new
+    firestore = SolidGcp::Cable::Firestore.new(
+      config: config.tap { |c| c.firestore_emulator_host = "127.0.0.1:8080" },
+      http: http,
+      authorizer: ExplodingAuthorizer.new
+    )
+    firestore.touch("job_runs")
+
+    assert_equal(
+      "http://127.0.0.1:8080/v1/projects/cable-proj/databases/(default)/documents:commit",
+      http.url
+    )
+    assert_equal "Bearer owner", http.headers["Authorization"]
+  end
 end

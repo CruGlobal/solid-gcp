@@ -6,6 +6,11 @@ name the same tested combination.
 
 ## [Unreleased]
 
+- Cable: Firebase emulator support. With `FIRESTORE_EMULATOR_HOST` /
+  `FIREBASE_AUTH_EMULATOR_HOST` set (or the matching config attrs), the whole
+  flow runs against the local emulators with no GCP credentials — project
+  defaults to `demo-solid-gcp`.
+
 ## [0.1.0] - 2026-07-14
 
 Initial release.

@@ -52,7 +52,7 @@ module SolidGcp
       attr_accessor :database, :collection, :signer_email,
                     :firebase_web_config, :stream_ttl, :token_ttl,
                     :touch_debounce
-      attr_writer :mode, :project
+      attr_writer :mode, :project, :firestore_emulator_host, :auth_emulator_host
 
       def initialize(parent)
         @parent = parent
@@ -68,9 +68,23 @@ module SolidGcp
 
       attr_reader :mode
 
-      # Defaults to the queue component's project when not set explicitly.
+      # Firebase emulator hosts. Default from the Admin-SDK env vars so setting
+      # them (e.g. by `firebase emulators:start`) routes the whole Cable flow at
+      # the local emulators with no credentials.
+      def firestore_emulator_host
+        @firestore_emulator_host || ENV["FIRESTORE_EMULATOR_HOST"]
+      end
+
+      def auth_emulator_host
+        @auth_emulator_host || ENV["FIREBASE_AUTH_EMULATOR_HOST"]
+      end
+
+      # Defaults to the queue component's project when not set explicitly. When
+      # nothing resolves but the Firestore emulator is configured, fall back to a
+      # `demo-*` project: Firebase treats that prefix as emulator-only, so a stray
+      # request can never reach a real GCP project.
       def project
-        @project || @parent.project
+        @project || @parent.project || (firestore_emulator_host && "demo-solid-gcp")
       end
     end
   end

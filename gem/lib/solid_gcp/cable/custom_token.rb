@@ -27,6 +27,10 @@ module SolidGcp
       end
 
       def header
+        # The Auth emulator accepts unsigned tokens (alg "none"), matching the
+        # Admin SDK's emulated signer; the real path uses RS256 via signBlob.
+        return { "alg" => "none", "typ" => "JWT" } if emulator?
+
         { "alg" => "RS256", "typ" => "JWT" }
       end
 
@@ -50,15 +54,24 @@ module SolidGcp
 
       def signer_email
         @resolved_signer_email ||=
-          @signer_email || @config.signer_email || fetch_metadata_email ||
+          @signer_email || @config.signer_email ||
+          (emulator? && "firebase-auth-emulator@example.com") ||
+          fetch_metadata_email ||
           raise(ConfigurationError,
             "cable.signer_email is not set and could not be derived from the metadata server")
       end
 
       private
 
-      # base64url of the raw signature bytes returned by signBlob.
+      def emulator?
+        !@config.auth_emulator_host.nil?
+      end
+
+      # base64url of the raw signature bytes returned by signBlob. In emulator
+      # mode the token is unsigned, so the signature segment is empty.
       def sign(signing_input)
+        return "" if emulator?
+
         url = "#{IAM_BASE}/projects/-/serviceAccounts/#{signer_email}:signBlob"
         body = { "payload" => Base64.strict_encode64(signing_input) }.to_json
         response = Cable.request(@http, url, body, iam_headers, action: "signBlob")

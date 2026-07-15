@@ -141,6 +141,29 @@ config.solid_gcp.mode = :local
 Enqueued jobs are delivered by an in-process thread scheduler that honors delays and
 runs the same receiver path. OIDC verification is off by default outside production.
 
+### Cable with the Firebase emulators
+
+Run the whole Cable flow (Firestore touch, custom-token mint, client sign-in + listen)
+locally with zero GCP credentials:
+
+```bash
+firebase emulators:start --only firestore,auth
+```
+
+The emulator loads the app's `firestore.rules` (wired via `firebase.json`) so the same
+security rules apply locally. When the firebase CLI spawns your server it sets the env
+vars below; if you run Rails separately, export them yourself:
+
+```bash
+export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+export FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+```
+
+With those set (matching the Admin-SDK convention), the server routes Firestore/Auth at
+the emulators and the Stimulus client connects to them — no config needed. `project`
+defaults to `demo-solid-gcp` (Firebase's `demo-*` prefix = emulator-only), guarding
+against real API calls.
+
 ## Cloud Run Jobs (long jobs)
 
 Declare the execution mode on the job class:

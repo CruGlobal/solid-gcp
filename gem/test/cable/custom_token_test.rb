@@ -70,6 +70,31 @@ class CableCustomTokenTest < SolidGcp::TestCase
     assert_equal "sig-bytes", Base64.urlsafe_decode64(signature_seg)
   end
 
+  # Fails the test if any HTTP call is made (emulator mode must not signBlob).
+  class ExplodingHttp
+    def post(*)
+      raise "no HTTP call expected in emulator mode"
+    end
+  end
+
+  test "auth emulator mints an unsigned token without a signBlob call" do
+    SolidGcp.config.cable.auth_emulator_host = "127.0.0.1:9099"
+    SolidGcp.config.cable.signer_email = nil
+    token = SolidGcp::Cable::CustomToken.new(
+      config: SolidGcp.config.cable,
+      http: ExplodingHttp.new
+    ).mint(%w[docA docB])
+
+    header_seg, payload_seg, signature_seg = token.split(".", -1)
+    assert_equal({ "alg" => "none", "typ" => "JWT" }, decode(header_seg))
+    assert_equal "", signature_seg
+
+    payload = decode(payload_seg)
+    assert_equal "firebase-auth-emulator@example.com", payload["iss"]
+    assert_equal "firebase-auth-emulator@example.com", payload["sub"]
+    assert_equal(%w[docA docB], payload.dig("claims", "sgs"))
+  end
+
   test "raises when signer_email cannot be resolved" do
     SolidGcp.config.cable.signer_email = nil
     token = SolidGcp::Cable::CustomToken.new(

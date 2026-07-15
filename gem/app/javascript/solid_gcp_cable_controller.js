@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { initializeApp, getApps, getApp } from "firebase/app"
-import { getAuth, signInWithCustomToken } from "firebase/auth"
-import { getFirestore, doc, onSnapshot } from "firebase/firestore"
+import { getAuth, signInWithCustomToken, connectAuthEmulator } from "firebase/auth"
+import { getFirestore, doc, onSnapshot, connectFirestoreEmulator } from "firebase/firestore"
 
 // Page-level registry: many stream elements share one token fetch, one sign-in,
 // and one Firestore listener per doc. State lives on the module, not per element.
@@ -22,7 +22,8 @@ const registry = {
   retryTimer: null,  // pending backoff timer id (null => not backing off)
   attempt: 0,        // consecutive failed attempts
   failed: false,     // gave up after exhausting attempts
-  signedIn: false    // have a live Firebase session covering current streams
+  signedIn: false,   // have a live Firebase session covering current streams
+  emulatorsConnected: false // connect{Auth,Firestore}Emulator run (at most once)
 }
 
 // Jittered exponential backoff: base 1s, x2 per attempt, capped 60s, +/-50%
@@ -87,12 +88,30 @@ async function fetchToken(signedNames) {
 
 async function establishSession() {
   const app = firebaseApp()
+  const auth = getAuth(app)
+  registry.db = getFirestore(app)
+  connectEmulators(auth, registry.db)
   if (!registry.signedIn) {
     const token = await fetchToken(Array.from(registry.streams.keys()))
-    await signInWithCustomToken(getAuth(app), token)
+    await signInWithCustomToken(auth, token)
     registry.signedIn = true
   }
-  registry.db = getFirestore(app)
+}
+
+// Point the SDKs at the emulators when configured. connectAuthEmulator /
+// connectFirestoreEmulator throw if called more than once or after the SDK is
+// used, so run them at most once per page, before any sign-in or snapshot.
+function connectEmulators(auth, db) {
+  if (registry.emulatorsConnected) return
+  registry.emulatorsConnected = true
+  const config = readConfig()
+  if (config.authEmulatorHost) {
+    connectAuthEmulator(auth, `http://${config.authEmulatorHost}`, { disableWarnings: true })
+  }
+  if (config.firestoreEmulatorHost) {
+    const [host, port] = config.firestoreEmulatorHost.split(":")
+    connectFirestoreEmulator(db, host, Number(port))
+  }
 }
 
 // One connect attempt: (re)establish the session, then attach any missing
