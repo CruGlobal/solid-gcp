@@ -13,6 +13,11 @@ name the same tested combination.
   `FIREBASE_AUTH_EMULATOR_HOST` set (or the matching config attrs), the whole
   flow runs against the local emulators with no GCP credentials — project
   defaults to `demo-solid-gcp`.
+- Prebuilt Firestore + Auth emulators image
+  (`ghcr.io/cruglobal/solid-gcp-firebase-emulators`, tag tracks firebase-tools
+  version): consumers run the Cable dev backend via `docker run` instead of
+  installing a JRE + firebase-tools; apps mount their own firebase.json /
+  firestore.rules for rules parity. Built in `emulator-image/`.
 
 ## [0.1.0] - 2026-07-14
 
