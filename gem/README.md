@@ -151,15 +151,28 @@ changes need a server restart.
 ### Cable with the Firebase emulators
 
 Run the whole Cable flow (Firestore touch, custom-token mint, client sign-in + listen)
-locally with zero GCP credentials:
+locally with zero GCP credentials. The recommended path is the prebuilt emulators image
+(no local JRE / firebase-tools install):
+
+```bash
+docker run --rm -p 8080:8080 -p 9099:9099 \
+  ghcr.io/cruglobal/solid-gcp-firebase-emulators:15.23.0
+```
+
+Or via docker-compose, mounting your app's `firebase.json` + `firestore.rules` so the
+same security rules apply locally (see `emulator-image/README.md`). Without a mounted
+config the emulator allows all reads/writes — fine to start.
+
+No-docker fallback (needs a JRE + `firebase-tools`):
 
 ```bash
 firebase emulators:start --only firestore,auth
 ```
 
 The emulator loads the app's `firestore.rules` (wired via `firebase.json`) so the same
-security rules apply locally. When the firebase CLI spawns your server it sets the env
-vars below; if you run Rails separately, export them yourself:
+security rules apply locally. Ports map to localhost either way, so the env vars below
+are unchanged. When the firebase CLI spawns your server it sets them; if you run Rails
+separately (or use the docker image), export them yourself:
 
 ```bash
 export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
