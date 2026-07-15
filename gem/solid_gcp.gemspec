@@ -14,7 +14,11 @@ Gem::Specification.new do |spec|
   spec.license     = "MIT"
   spec.required_ruby_version = ">= 3.2"
 
-  spec.metadata["rubygems_mfa_required"] = "true"
+  spec.metadata["source_code_uri"] = "https://github.com/CruGlobal/solid-gcp"
+  spec.metadata["changelog_uri"]   = "https://github.com/CruGlobal/solid-gcp/blob/main/CHANGELOG.md"
+  # Not published to rubygems.org — consumed via Bundler git source pinned to a
+  # tag. The bogus push host makes an accidental `gem push` fail.
+  spec.metadata["allowed_push_host"] = "https://not-published.invalid"
 
   spec.files = Dir[
     "lib/**/*", "app/**/*", "config/**/*", "README.md"

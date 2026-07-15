@@ -1,0 +1,73 @@
+name: Release
+
+# Tag-driven releases: push a `vX.Y.Z` tag and this verifies the tag matches
+# SolidGcp::VERSION, runs both suites, and creates the GitHub Release with
+# notes pulled from that version's CHANGELOG.md section. No rubygems.org —
+# consumers pin the tag via a Bundler git source (see gem/README.md).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  gem:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gem
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches SolidGcp::VERSION
+        run: |
+          ruby -e '
+            require_relative "lib/solid_gcp/version"
+            tag = ENV.fetch("GITHUB_REF_NAME")
+            abort "tag #{tag} != VERSION #{SolidGcp::VERSION}" unless tag == "v#{SolidGcp::VERSION}"
+          '
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.4.7
+          bundler-cache: true
+          working-directory: gem
+      - run: bundle exec rake test
+
+  dummy:
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: test
+    defaults:
+      run:
+        working-directory: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.4.7
+          bundler-cache: true
+          working-directory: dummy
+      - run: bin/rails db:prepare
+      - run: bin/rails test
+
+  release:
+    needs: [gem, dummy]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract CHANGELOG section for this version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" { in_section = 1; next }
+            in_section && (/^## \[/ || /^\[/) { exit }
+            in_section { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q "[^[:space:]]" release-notes.md; then
+            echo "No CHANGELOG.md section found for $version" >&2
+            exit 1
+          fi
+      - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
