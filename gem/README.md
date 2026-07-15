@@ -22,11 +22,18 @@ jobs are synced to Cloud Scheduler.
 
 ## Install
 
-Add to your Gemfile:
+The gem is not published to rubygems.org; consume it straight from GitHub,
+pinned to a release tag (the gem lives in this repo's `gem/` subdirectory,
+hence `glob:`):
 
 ```ruby
-gem "solid_gcp"
+gem "solid_gcp", github: "CruGlobal/solid-gcp", tag: "v0.1.0", glob: "gem/*.gemspec"
 ```
+
+Bundler locks the tag's commit SHA in `Gemfile.lock`, so builds are
+reproducible. To upgrade, bump the tag and `bundle update solid_gcp`.
+Available versions: [releases](https://github.com/CruGlobal/solid-gcp/releases)
+/ [CHANGELOG](../CHANGELOG.md).
 
 Mount the engine (must be at `/solid_gcp`):
 
@@ -60,8 +67,19 @@ bin/rails db:migrate
 ```
 
 Provision the GCP infrastructure (Cloud Tasks queues, service accounts + IAM,
-Cloud Scheduler jobs, Cloud Run service + Job, Artifact Registry) with the Terraform
-module in `../terraform`.
+Cloud Scheduler jobs, Cloud Run service + Job) with this repo's Terraform module,
+pinned to the **same tag** as the gem — one tag names one tested gem+infra combination:
+
+```hcl
+module "solid_gcp" {
+  source = "git::https://github.com/CruGlobal/solid-gcp.git//terraform?ref=v0.1.0"
+  # ...
+}
+```
+
+The module grants all IAM the gem needs (task creation, OIDC token minting for the
+invoker SA, `jobs.run`, scheduler management). If you provision by hand instead, see
+`../terraform` for the exact roles.
 
 ## Configuration reference
 
@@ -209,3 +227,15 @@ Events are published via `ActiveSupport::Notifications` (Rails
 bundle install
 bundle exec rake test
 ```
+
+### Releasing
+
+1. Bump `SolidGcp::VERSION` (`lib/solid_gcp/version.rb`) and move the
+   `Unreleased` CHANGELOG entries under the new version.
+2. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+3. The Release workflow verifies tag == VERSION, runs both suites, and creates
+   the GitHub Release with that version's CHANGELOG section as notes.
+
+## License
+
+MIT — see [LICENSE](../LICENSE) at the repo root.
