@@ -13,7 +13,29 @@ const registry = {
   unsubscribes: new Map(), // doc -> unsubscribe fn
   live: new Set(),         // docs whose initial snapshot has arrived (listening)
   refreshTimer: null,
-  config: null
+  config: null,
+  // Retry/backoff state for the setup + attach chain. Firestore auto-refreshes
+  // ID tokens hourly on its own (custom claims persist), so steady-state expiry
+  // does NOT land here; this covers token-fetch/sign-in failures and listener
+  // auth errors (claims/rules changed) only.
+  connecting: false, // an attempt is in flight (guards re-entry)
+  retryTimer: null,  // pending backoff timer id (null => not backing off)
+  attempt: 0,        // consecutive failed attempts
+  failed: false,     // gave up after exhausting attempts
+  signedIn: false    // have a live Firebase session covering current streams
+}
+
+// Jittered exponential backoff: base 1s, x2 per attempt, capped 60s, +/-50%
+// jitter to avoid a thundering herd of clients retrying in lockstep.
+const BACKOFF_BASE_MS = 1000
+const BACKOFF_FACTOR = 2
+const BACKOFF_CAP_MS = 60000
+const BACKOFF_MAX_ATTEMPTS = 8
+
+function backoffDelay(failedAttempt) {
+  const raw = Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * BACKOFF_FACTOR ** failedAttempt)
+  const jitter = raw * 0.5 * (Math.random() * 2 - 1)
+  return Math.max(0, raw + jitter)
 }
 
 function readConfig() {
@@ -40,7 +62,10 @@ function scheduleTokenFetch() {
   registry.fetchScheduled = true
   queueMicrotask(() => {
     registry.fetchScheduled = false
-    connectAll()
+    // The stream set just changed; the current session's token may not cover the
+    // new streams, so force a fresh token and connect now (resetting backoff).
+    registry.signedIn = false
+    reconnect()
   })
 }
 
@@ -60,24 +85,74 @@ async function fetchToken(signedNames) {
   return data.token
 }
 
-async function connectAll(retried = false) {
-  const signedNames = Array.from(registry.streams.keys())
-  if (signedNames.length === 0) return
-
-  try {
-    const token = await fetchToken(signedNames)
-    const app = firebaseApp()
+async function establishSession() {
+  const app = firebaseApp()
+  if (!registry.signedIn) {
+    const token = await fetchToken(Array.from(registry.streams.keys()))
     await signInWithCustomToken(getAuth(app), token)
-    registry.db = getFirestore(app)
+    registry.signedIn = true
+  }
+  registry.db = getFirestore(app)
+}
 
+// One connect attempt: (re)establish the session, then attach any missing
+// listeners. Throws are caught here and turned into a backoff retry; onSnapshot
+// runtime failures surface later via the error callback, not here.
+async function connectAll() {
+  if (registry.connecting) return
+  if (registry.streams.size === 0) return
+  registry.connecting = true
+  try {
+    await establishSession()
     for (const { doc: docPath } of registry.streams.values()) {
       if (registry.unsubscribes.has(docPath)) continue
       attachListener(docPath)
     }
+    registry.attempt = 0
+    registry.failed = false
   } catch (error) {
-    if (!retried && isAuthError(error)) return connectAll(true)
-    console.error("[solid-gcp-cable] connect failed", error)
+    registry.connecting = false
+    scheduleRetry(error)
+    return
   }
+  registry.connecting = false
+}
+
+function scheduleRetry(error) {
+  if (registry.retryTimer || registry.connecting) return
+  registry.attempt += 1
+  if (registry.attempt >= BACKOFF_MAX_ATTEMPTS) {
+    registry.failed = true
+    console.warn(`[solid-gcp-cable] giving up after ${registry.attempt} attempts`, error)
+    document.dispatchEvent(
+      new CustomEvent("solid-gcp-cable:failed", { detail: { error: String(error) } })
+    )
+    return
+  }
+  registry.retryTimer = setTimeout(() => {
+    registry.retryTimer = null
+    connectAll()
+  }, backoffDelay(registry.attempt - 1))
+}
+
+// Fresh trigger (new streams, network resume): drop any pending backoff and try
+// now with a clean attempt counter.
+function reconnect() {
+  if (registry.retryTimer) {
+    clearTimeout(registry.retryTimer)
+    registry.retryTimer = null
+  }
+  registry.attempt = 0
+  registry.failed = false
+  connectAll()
+}
+
+// Network came back / tab became visible again. Firestore reconnects its own
+// transport; we only kick OUR token/attach retry if it's stalled (backing off
+// or already gave up), and only when there's something to listen to.
+function handleResume() {
+  if (registry.streams.size === 0) return
+  if (registry.failed || registry.retryTimer) reconnect()
 }
 
 function attachListener(docPath) {
@@ -101,15 +176,22 @@ function attachListener(docPath) {
       }
       scheduleRefresh()
     },
-    async (error) => {
+    (error) => {
       if (isAuthError(error)) {
-        // Token expired (~1h) or permission changed: re-auth and re-attach once.
-        unsubscribe()
+        // Auth/claims/rules changed (or token rejected): drop this listener,
+        // force a fresh token + re-sign-in, then re-attach — but through the
+        // backoff loop, so a persistent denial backs off instead of hot-looping.
+        const unsub = registry.unsubscribes.get(docPath)
+        if (unsub) unsub()
         registry.unsubscribes.delete(docPath)
         registry.live.delete(docPath)
-        await connectAll(true)
+        updateListeningMarker()
+        registry.signedIn = false
+        scheduleRetry(error)
       } else {
-        console.error("[solid-gcp-cable] snapshot error", error)
+        // Transient (e.g. 'unavailable' while offline): Firestore keeps the
+        // listener and resumes on its own — don't fight it.
+        console.debug("[solid-gcp-cable] snapshot error (transient)", error)
       }
     }
   )
@@ -121,14 +203,21 @@ function attachListener(docPath) {
 // app code can listen too. The attribute value is the count of live docs.
 function markListening(docPath) {
   registry.live.add(docPath)
-  document.documentElement.setAttribute(
-    "data-solid-gcp-cable-listening",
-    String(registry.live.size)
-  )
+  updateListeningMarker()
+  // A landed snapshot proves the whole chain works; clear any residual backoff.
+  registry.attempt = 0
+  registry.failed = false
   document.dispatchEvent(
     new CustomEvent("solid-gcp-cable:listening", {
       detail: { doc: docPath, docs: Array.from(registry.live) }
     })
+  )
+}
+
+function updateListeningMarker() {
+  document.documentElement.setAttribute(
+    "data-solid-gcp-cable-listening",
+    String(registry.live.size)
   )
 }
 
@@ -150,6 +239,13 @@ function scheduleRefresh() {
     }
   }, 300)
 }
+
+// Network-resume hooks are page-global and live for the page's lifetime; they
+// no-op unless a stream is registered and stalled (see handleResume).
+window.addEventListener("online", handleResume)
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") handleResume()
+})
 
 export default class extends Controller {
   static values = { signedName: String, doc: String }
@@ -177,9 +273,24 @@ export default class extends Controller {
       registry.unsubscribes.delete(entry.doc)
     }
     registry.live.delete(entry.doc)
-    document.documentElement.setAttribute(
-      "data-solid-gcp-cable-listening",
-      String(registry.live.size)
-    )
+    updateListeningMarker()
+
+    // Last stream gone (page nav / morph removed it): cancel any in-flight retry
+    // or refresh so a Turbo navigation doesn't leak a backoff loop, and reset so
+    // a future connect starts clean.
+    if (registry.streams.size === 0) {
+      if (registry.retryTimer) {
+        clearTimeout(registry.retryTimer)
+        registry.retryTimer = null
+      }
+      if (registry.refreshTimer) {
+        clearTimeout(registry.refreshTimer)
+        registry.refreshTimer = null
+      }
+      registry.attempt = 0
+      registry.failed = false
+      registry.connecting = false
+      registry.signedIn = false
+    }
   }
 }
