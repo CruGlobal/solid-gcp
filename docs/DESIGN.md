@@ -189,7 +189,29 @@ or shared). Entry: `class:`/`command:`, `args:`, `queue:`, `schedule:` (parse wi
 
 ## Error classes
 
-`SolidGcp::Error`, `SolidGcp::NotReady`, `SolidGcp::ConfigurationError`.
+`SolidGcp::Error`, `SolidGcp::NotReady`, `SolidGcp::ConfigurationError`,
+`SolidGcp::PayloadTooLarge`, `SolidGcp::Cable::HttpError`.
+
+## Hardening contracts (added 2026-07-14)
+
+- **Payload limit**: enqueue (cloud_tasks mode) raises `PayloadTooLarge` when the
+  envelope exceeds `max_task_bytes` (default 900_000 — headroom under Cloud
+  Tasks' ~1MB total-task cap).
+- **Config validation**: missing required config raises `ConfigurationError`
+  naming the key + env var at first dispatch — never a boot-time crash; install
+  generator ships a tolerant `ENV[...]` initializer (eager `ENV.fetch` at boot
+  breaks `assets:precompile` in image builds).
+- **Cable HTTP**: 5s open / 10s read timeouts; one jittered retry on 5xx/network
+  errors, never on 4xx; authorizer memoized per scope (googleauth token cache
+  actually reused).
+- **Delivery semantics**: at-least-once everywhere — Cloud Tasks redelivery for
+  /perform, execution retries for Cloud Run Jobs (observed double-run in one
+  successful execution). Jobs must be idempotent; documented, no guard code.
+- **Instrumentation** (`ActiveSupport::Notifications`): `enqueue.solid_gcp`
+  (job_class, queue, at, named), `perform.solid_gcp` (job_class, queue,
+  executions, outcome :ok/:failed/:discarded/:blocked/:not_ready),
+  `promote.solid_gcp`, `sweep.solid_gcp`, `touch.solid_gcp` (stream, doc_id,
+  sync, debounced), `mint_token.solid_gcp` (streams).
 
 ## Testing requirements (gem/test, minitest)
 
@@ -303,8 +325,14 @@ streams per request (422) — a page should never need more. Response
   `signInWithCustomToken` → one `onSnapshot` per doc. Skip the initial snapshot;
   on any subsequent snapshot, debounce 300ms, then `Turbo.session.refresh(location.href)`
   when Turbo ≥8 is present, else dispatch `solid-gcp-cable:refresh` on `document`.
-  On disconnect (page nav), unsubscribe listeners. Token expiry (~1h): on
-  `permission-denied`/token-expired listener error, re-fetch token and re-attach once.
+  On disconnect (page nav), unsubscribe listeners and cancel retry/refresh timers.
+  Failure handling: unified jittered exponential backoff (1s base, ×2, cap 60s,
+  ±50%, max 8 attempts → single console.warn + `solid-gcp-cable:failed` event)
+  around token fetch / sign-in / attach; auth-class listener errors
+  (permission-denied etc. — in practice claims/rules changes, since the Firebase
+  SDK auto-refreshes ID tokens with claims intact) force a fresh token + re-sign-in
+  through the same loop; `online` / visibility→visible resets a stalled backoff.
+  Transport errors are left to Firestore's own reconnect.
 - Host app owns the `firebase` JS dep (`firebase/app`, `firebase/auth`,
   `firebase/firestore` — full, not `lite`; lite lacks `onSnapshot`).
 
