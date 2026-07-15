@@ -6,6 +6,8 @@ name the same tested combination.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-15
+
 - Local recurring ticker: in `:local` mode a server process ticks the current
   env's `recurring.yml` entries in-process (dev stand-in for Cloud Scheduler),
   through the same enqueue path as `/recurring/:key`. Consoles/rake don't tick.

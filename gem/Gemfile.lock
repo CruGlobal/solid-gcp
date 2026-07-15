@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    solid_gcp (0.1.0)
+    solid_gcp (0.2.0)
       fugit (>= 1.8)
       google-cloud-run-v2 (>= 0.10)
       google-cloud-scheduler (>= 2.0)
