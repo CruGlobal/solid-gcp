@@ -278,8 +278,10 @@ bundle exec rake test
 
 1. Bump `SolidGcp::VERSION` (`lib/solid_gcp/version.rb`) and move the
    `Unreleased` CHANGELOG entries under the new version.
-2. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. The Release workflow verifies tag == VERSION, runs both suites, and creates
+2. `bundle install` in both `gem/` and `dummy/` — the version bump stales both
+   lockfiles, and CI runs bundler frozen.
+3. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+4. The Release workflow verifies tag == VERSION, runs both suites, and creates
    the GitHub Release with that version's CHANGELOG section as notes.
 
 ## License
