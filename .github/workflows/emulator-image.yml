@@ -50,6 +50,9 @@ jobs:
             curl -sf localhost:8080 >/dev/null && break
             sleep 1
           done
+          echo "--- :8080 ---"; curl -s localhost:8080; echo
+          echo "--- :9099 ---"; curl -s localhost:9099; echo
+          echo "--- container logs ---"; docker logs smoke
           curl -sf localhost:8080 | grep -q Ok
           curl -sf localhost:9099 | grep -q authEmulator
           # The Firestore jar is baked in at build time; a runtime download
