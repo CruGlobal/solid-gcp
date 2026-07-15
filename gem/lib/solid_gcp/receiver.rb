@@ -17,6 +17,23 @@ module SolidGcp
     end
 
     def receive
+      ActiveSupport::Notifications.instrument("perform.solid_gcp", instrument_payload) do |payload|
+        @payload = payload
+        run
+      end
+    end
+
+    private
+
+    def instrument_payload
+      {
+        job_class: @job_data["job_class"],
+        queue: @job_data["queue_name"],
+        executions: @job_data["executions"]
+      }
+    end
+
+    def run
       job = ActiveJob::Base.deserialize(@job_data)
       job.send(:deserialize_arguments_if_needed)
 
@@ -34,6 +51,7 @@ module SolidGcp
         unless acquired
           case klass.concurrency_on_conflict
           when :discard
+            @payload[:outcome] = :discarded
             return :discarded
           when :block
             BlockedJob.create!(
@@ -42,6 +60,7 @@ module SolidGcp
               expires_at: Time.current + duration
             )
             SweepScheduler.ensure_scheduled(at: Time.current + duration)
+            @payload[:outcome] = :blocked
             return :blocked
           end
         end
@@ -57,17 +76,21 @@ module SolidGcp
       end
     end
 
-    private
-
     def execute
       ActiveJob::Base.execute(@job_data)
+      @payload[:outcome] = :ok
       :executed
     rescue StandardError => e
-      raise NotReady, e.message if infra_error?(e) && !e.is_a?(NotReady)
-      raise if e.is_a?(NotReady)
+      if (infra_error?(e) && !e.is_a?(NotReady)) || e.is_a?(NotReady)
+        @payload[:outcome] = :not_ready
+        raise NotReady, e.message unless e.is_a?(NotReady)
+
+        raise
+      end
 
       FailedJob.record!(@envelope, e)
       Rails.error.report(e, handled: false) if defined?(Rails) && Rails.respond_to?(:error)
+      @payload[:outcome] = :failed
       :executed
     end
 

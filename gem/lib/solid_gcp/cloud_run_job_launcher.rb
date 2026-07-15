@@ -3,6 +3,10 @@
 module SolidGcp
   # Runs a Cloud Run Job execution passing the serialized envelope via env var.
   # The Cloud Run Job runs the same image with `bin/rails solid_gcp:execute`.
+  #
+  # AT-LEAST-ONCE: a Cloud Run Job execution can retry after a slow start, so a
+  # single "successful" launch may run the job body more than once (observed
+  # live). Jobs dispatched via `perform_via :cloud_run_job` MUST be idempotent.
   class CloudRunJobLauncher
     ENVELOPE_ENV = "SOLID_GCP_ENVELOPE"
 

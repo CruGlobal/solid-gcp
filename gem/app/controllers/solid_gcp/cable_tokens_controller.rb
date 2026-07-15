@@ -18,7 +18,12 @@ module SolidGcp
       return head(:unauthorized) if stream_names.any?(&:nil?)
 
       doc_ids = stream_names.map { |name| Cable::StreamName.doc_id(name) }
-      render json: { token: Cable::CustomToken.new.mint(doc_ids) }
+      token = ActiveSupport::Notifications.instrument(
+        "mint_token.solid_gcp", streams: doc_ids.size
+      ) do
+        Cable::CustomToken.new.mint(doc_ids)
+      end
+      render json: { token: token }
     end
   end
 end

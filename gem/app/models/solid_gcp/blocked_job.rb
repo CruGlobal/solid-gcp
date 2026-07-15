@@ -13,8 +13,13 @@ module SolidGcp
         return false unless row
 
         envelope = JSON.parse(row.serialized_envelope)
-        row.destroy
-        Dispatcher.dispatch_envelope(envelope)
+        ActiveSupport::Notifications.instrument(
+          "promote.solid_gcp",
+          concurrency_key: key, job_class: Envelope.job_class_name(envelope)
+        ) do
+          row.destroy
+          Dispatcher.dispatch_envelope(envelope)
+        end
         true
       end
 

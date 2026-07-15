@@ -2,6 +2,9 @@
 
 namespace :solid_gcp do
   desc "Execute a serialized job envelope from ENV['SOLID_GCP_ENVELOPE'] (Cloud Run Job entrypoint)"
+  # AT-LEAST-ONCE: this task is the Cloud Run Job entrypoint. A Cloud Run Job
+  # execution can retry after a slow start, so this can run the same envelope
+  # more than once within one "successful" execution. Keep such jobs idempotent.
   task execute: :environment do
     require "solid_gcp"
 

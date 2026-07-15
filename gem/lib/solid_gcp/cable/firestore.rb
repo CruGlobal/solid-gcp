@@ -20,10 +20,9 @@ module SolidGcp
       end
 
       def commit(doc_id)
-        response = @http.post(commit_url, commit_body(doc_id).to_json, headers)
-        return if (200..299).cover?(response.code)
-
-        raise Error, "Firestore commit failed (#{response.code}): #{response.body}"
+        Cable.request(@http, commit_url, commit_body(doc_id).to_json, headers,
+          action: "Firestore commit")
+        nil
       end
 
       def commit_url
@@ -71,10 +70,7 @@ module SolidGcp
       end
 
       def authorizer
-        @authorizer ||= begin
-          require "googleauth"
-          Google::Auth.get_application_default(SCOPE)
-        end
+        @authorizer ||= Cable.default_authorizer(SCOPE)
       end
     end
   end

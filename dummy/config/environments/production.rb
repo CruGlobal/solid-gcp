@@ -90,11 +90,17 @@ Rails.application.configure do
   # Solid GCP: real Cloud Tasks push delivery. All values are env-driven so the
   # same image deploys to any project/region. OIDC verification is on by default
   # in production (verifies tokens minted by Cloud Tasks / Cloud Scheduler).
+  #
+  # Read env TOLERANTLY (ENV[...] not ENV.fetch): `assets:precompile` runs at
+  # image-build time with no runtime env, and an eager fetch-raise there breaks
+  # the build. SolidGcp validates required keys lazily at first dispatch/receive
+  # (raises SolidGcp::ConfigurationError naming any missing key). The deployed
+  # image passes these vars at runtime, so behavior is identical when present.
   config.solid_gcp.mode                    = :cloud_tasks
-  config.solid_gcp.project                 = ENV.fetch("SOLID_GCP_PROJECT")
-  config.solid_gcp.location                = ENV.fetch("SOLID_GCP_LOCATION")
-  config.solid_gcp.push_base_url           = ENV.fetch("SOLID_GCP_PUSH_BASE_URL")
-  config.solid_gcp.invoker_service_account = ENV.fetch("SOLID_GCP_INVOKER_SA")
+  config.solid_gcp.project                 = ENV["SOLID_GCP_PROJECT"]
+  config.solid_gcp.location                = ENV["SOLID_GCP_LOCATION"]
+  config.solid_gcp.push_base_url           = ENV["SOLID_GCP_PUSH_BASE_URL"]
+  config.solid_gcp.invoker_service_account = ENV["SOLID_GCP_INVOKER_SA"]
   # Cloud Run Job that runs FakeImportJob via `bin/rails solid_gcp:execute`.
   config.solid_gcp.cloud_run_job_name      = ENV.fetch("SOLID_GCP_CLOUD_RUN_JOB", "dummy-import-runner")
 

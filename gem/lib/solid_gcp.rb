@@ -14,8 +14,13 @@ module SolidGcp
   # Infra not ready (DB waking, deploy race). Maps to 503 so Cloud Tasks retries.
   class NotReady < Error; end
 
-  # Misconfiguration detected at boot (e.g. Solid Queue also loaded).
+  # Misconfiguration detected at boot (e.g. Solid Queue also loaded) or a
+  # required config key missing at dispatch/receive time.
   class ConfigurationError < Error; end
+
+  # Enqueue-time guard: the serialized envelope exceeds `max_task_bytes`
+  # (Cloud Tasks caps total HTTP task size at ~1 MB).
+  class PayloadTooLarge < Error; end
 end
 
 require "solid_gcp/configuration"

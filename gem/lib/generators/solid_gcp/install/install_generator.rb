@@ -23,6 +23,11 @@ module SolidGcp
         )
       end
 
+      # Tolerant, env-driven initializer (build-safe: no eager ENV.fetch).
+      def create_initializer
+        template("solid_gcp.rb.tt", "config/initializers/solid_gcp.rb")
+      end
+
       private
 
       def migration_version

@@ -16,8 +16,21 @@ module SolidGcp
   # controller can trigger a Turbo morph refresh. Fully no-op unless
   # `SolidGcp.config.cable.mode` is :firestore or :test.
   module Cable
+    # A REST call to Firestore / IAM Credentials failed (non-2xx after retry, or
+    # a network error after retry). Carries the endpoint action for legibility.
+    class HttpError < SolidGcp::Error; end
+
     # Minimal HTTP response wrapper (status + raw body).
     Response = Struct.new(:code, :body)
+
+    OPEN_TIMEOUT = 5  # seconds to establish the connection
+    READ_TIMEOUT = 10 # seconds to read the response
+
+    # Transient network failures worth one retry.
+    RETRYABLE_EXCEPTIONS = [
+      Net::OpenTimeout, Net::ReadTimeout,
+      Errno::ECONNRESET, Errno::ECONNREFUSED, SocketError
+    ].freeze
 
     # Default HTTP layer (injectable in tests so nothing hits the network).
     class DefaultHttp
@@ -25,6 +38,8 @@ module SolidGcp
         uri = URI(url)
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == "https"
+        http.open_timeout = OPEN_TIMEOUT
+        http.read_timeout = READ_TIMEOUT
         request = Net::HTTP::Post.new(uri)
         headers.each { |key, value| request[key] = value }
         request.body = body
@@ -33,10 +48,68 @@ module SolidGcp
       end
     end
 
+    # Module-level googleauth credential cache, keyed by scope. googleauth
+    # credentials cache access tokens internally, so reusing one instance per
+    # scope means the token is refreshed only when it actually expires instead of
+    # minting a fresh authorizer (and token) on every REST call.
+    @authorizers = {}
+    @authorizers_mutex = Mutex.new
+
     module_function
 
     def config
       SolidGcp.config.cable
+    end
+
+    # Memoized application-default credentials for a scope (thread-safe).
+    def default_authorizer(scope)
+      @authorizers_mutex.synchronize do
+        @authorizers[scope] ||= begin
+          require "googleauth"
+          Google::Auth.get_application_default(scope)
+        end
+      end
+    end
+
+    # Test hook: drop the cached authorizers.
+    def reset_authorizers!
+      @authorizers_mutex.synchronize { @authorizers.clear }
+    end
+
+    # POST via the (injectable) http layer with one jittered retry on transient
+    # failures. Returns the Response on 2xx; raises HttpError on a 4xx, on a 5xx
+    # that survives the retry, or on a network error that survives the retry.
+    # 4xx is never retried (the request itself is bad).
+    def request(http, url, body, headers, action:)
+      last_attempt = false
+      loop do
+        begin
+          response = http.post(url, body, headers)
+          return response if (200..299).cover?(response.code)
+
+          unless server_error?(response.code) && !last_attempt
+            raise HttpError, "#{action} failed (#{response.code}): #{body_excerpt(response.body)}"
+          end
+        rescue *RETRYABLE_EXCEPTIONS => e
+          raise HttpError, "#{action} failed after retry (#{e.class}): #{e.message}" if last_attempt
+        end
+
+        last_attempt = true
+        retry_sleep
+      end
+    end
+
+    def server_error?(code)
+      (500..599).cover?(code)
+    end
+
+    def body_excerpt(body)
+      body.to_s[0, 500]
+    end
+
+    # Small jittered backoff so a pair of racing callers don't retry in lockstep.
+    def retry_sleep
+      sleep(0.05 + rand * 0.1)
     end
 
     # Synchronously bump the stream doc. No-op unless enabled.
@@ -45,9 +118,15 @@ module SolidGcp
       when :firestore
         return unless firestore_ready?
 
-        Firestore.new.touch(StreamName.from(*streamables))
+        stream_name = StreamName.from(*streamables)
+        instrument_touch(stream_name, sync: true, debounced: false) do
+          Firestore.new.touch(stream_name)
+        end
       when :test
-        TestSink.record(StreamName.from(*streamables))
+        stream_name = StreamName.from(*streamables)
+        instrument_touch(stream_name, sync: true, debounced: false) do
+          TestSink.record(stream_name)
+        end
       end
       nil
     end
@@ -63,17 +142,36 @@ module SolidGcp
       when :off
         nil
       when :test
-        TouchJob.perform_later(*streamables)
+        stream_name = StreamName.from(*streamables)
+        instrument_touch(stream_name, sync: false, debounced: false) do
+          TouchJob.perform_later(*streamables)
+        end
       when :firestore
         return unless firestore_ready?
 
-        if debounce_active?
-          enqueue_debounced(streamables)
-        else
-          TouchJob.perform_later(*streamables)
+        stream_name = StreamName.from(*streamables)
+        debounced = debounce_active?
+        instrument_touch(stream_name, sync: false, debounced: debounced) do
+          if debounced
+            enqueue_debounced(streamables)
+          else
+            TouchJob.perform_later(*streamables)
+          end
         end
       end
       nil
+    end
+
+    # touch.solid_gcp: stream name, doc id, sync (touch) vs later (touch_later),
+    # and whether the later path is debounce-deduped.
+    def instrument_touch(stream_name, sync:, debounced:)
+      ActiveSupport::Notifications.instrument(
+        "touch.solid_gcp",
+        stream: stream_name, doc_id: StreamName.doc_id(stream_name),
+        sync: sync, debounced: debounced
+      ) do
+        yield
+      end
     end
 
     # --- debounce internals ------------------------------------------------

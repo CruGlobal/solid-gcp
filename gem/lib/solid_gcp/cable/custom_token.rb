@@ -61,10 +61,7 @@ module SolidGcp
       def sign(signing_input)
         url = "#{IAM_BASE}/projects/-/serviceAccounts/#{signer_email}:signBlob"
         body = { "payload" => Base64.strict_encode64(signing_input) }.to_json
-        response = @http.post(url, body, iam_headers)
-        unless (200..299).cover?(response.code)
-          raise Error, "signBlob failed (#{response.code}): #{response.body}"
-        end
+        response = Cable.request(@http, url, body, iam_headers, action: "signBlob")
 
         signed_blob = JSON.parse(response.body).fetch("signedBlob")
         base64url(Base64.decode64(signed_blob))
@@ -90,10 +87,7 @@ module SolidGcp
       end
 
       def authorizer
-        @authorizer ||= begin
-          require "googleauth"
-          Google::Auth.get_application_default(SCOPE)
-        end
+        @authorizer ||= Cable.default_authorizer(SCOPE)
       end
 
       def fetch_metadata_email

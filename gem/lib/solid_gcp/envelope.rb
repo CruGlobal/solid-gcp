@@ -21,7 +21,13 @@ module SolidGcp
     end
 
     def job_class(envelope)
-      job_data(envelope).fetch("job_class").constantize
+      job_class_name(envelope).constantize
+    end
+
+    # Class name as a String (no constantize) — cheap, safe for error messages
+    # and instrumentation payloads.
+    def job_class_name(envelope)
+      job_data(envelope).fetch("job_class")
     end
   end
 end

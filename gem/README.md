@@ -79,6 +79,13 @@ module in `../terraform`.
 | `cloud_run_job_name` | `nil` | Cloud Run Job for `perform_via :cloud_run_job` |
 | `connects_to` | `nil` | Passed to `SolidGcp::Record.connects_to` |
 | `recurring_file` | `"config/recurring.yml"` | Recurring schedule file |
+| `max_task_bytes` | `900_000` | Max serialized-envelope bytesize; enqueue raises `PayloadTooLarge` above it (Cloud Tasks caps total task size near 1 MB) |
+
+Configure env-driven keys tolerantly (`ENV[...]`, not `ENV.fetch`) so an image
+build's `assets:precompile` — which runs with no runtime env — doesn't abort.
+`rails g solid_gcp:install` writes a `config/initializers/solid_gcp.rb` embodying
+this pattern. Missing required keys raise `SolidGcp::ConfigurationError` (naming
+the key) at first dispatch, not a nil crash at boot.
 
 ## Concurrency controls
 
@@ -163,6 +170,38 @@ All POST, OIDC-verified, mounted under `/solid_gcp`:
 - `/launch` — run a Cloud Run Job. `204` accepted, `503` on launch failure.
 - `/sweep` — expire stale semaphores, re-dispatch expired blocked jobs.
 - `/recurring/:key` — enqueue a recurring entry. `404` unknown key.
+
+## Delivery semantics — jobs must be idempotent
+
+**Solid GCP is at-least-once. Design every job to tolerate running more than once.**
+
+- **Cloud Tasks push (`/perform`)** retries on any non-2xx / timeout. A job whose
+  side effects completed but whose response was lost (or that raised after a
+  partial write) will be delivered again.
+- **Cloud Run Job executions (`perform_via :cloud_run_job`)** add a second source
+  of duplication: an execution can **retry after a slow start**, so a single
+  execution that GCP reports as "successful" may still run the job body twice
+  (observed live). `bin/rails solid_gcp:execute` runs the same receiver path each
+  time.
+
+There is no dedup/guard code — idempotency is the app's responsibility. Use
+natural keys, `INSERT ... ON CONFLICT`, idempotency tokens, or
+`limits_concurrency` where a single-runner invariant matters.
+
+## Instrumentation
+
+Events are published via `ActiveSupport::Notifications` (Rails
+`event.solid_gcp` convention). Subscribe with
+`ActiveSupport::Notifications.subscribe("perform.solid_gcp") { |*, payload| ... }`.
+
+| Event | Fired when | Payload |
+|---|---|---|
+| `enqueue.solid_gcp` | Dispatcher enqueues a task | `job_class`, `queue`, `at`, `named` (named Cloud Tasks task?) |
+| `perform.solid_gcp` | Receiver executes a delivered envelope | `job_class`, `queue`, `executions`, `outcome` (`:ok`/`:failed`/`:discarded`/`:blocked`/`:not_ready`) |
+| `promote.solid_gcp` | A blocked job is promoted when a slot frees | `concurrency_key`, `job_class` |
+| `sweep.solid_gcp` | Sweep runs (expire semaphores, redispatch expired blocked jobs) | — |
+| `touch.solid_gcp` | Cable stream touch | `stream`, `doc_id`, `sync` (touch vs touch_later), `debounced` |
+| `mint_token.solid_gcp` | Cable custom token minted | `streams` (count) |
 
 ## Development
 

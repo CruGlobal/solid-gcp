@@ -1,0 +1,33 @@
+# frozen_string_literal: true
+
+# SolidGcp configuration.
+#
+# Read env vars TOLERANTLY here (ENV[...] returning nil is fine) rather than
+# with ENV.fetch. During `assets:precompile` in an image build the runtime env
+# is absent, and an eager ENV.fetch would abort the build. SolidGcp validates
+# the required keys lazily at first dispatch/receive and raises a
+# SolidGcp::ConfigurationError naming any missing key, so a real misconfig still
+# fails loudly — just at use time, not at boot.
+#
+# `config.solid_gcp` is the live SolidGcp.config object; assigning to it mutates
+# the singleton directly.
+Rails.application.configure do
+  config.solid_gcp.mode                    = :cloud_tasks
+  config.solid_gcp.project                 = ENV["SOLID_GCP_PROJECT"]
+  config.solid_gcp.location                = ENV["SOLID_GCP_LOCATION"]
+  config.solid_gcp.push_base_url           = ENV["SOLID_GCP_PUSH_BASE_URL"]
+  config.solid_gcp.invoker_service_account = ENV["SOLID_GCP_INVOKER_SA"]
+
+  # Optional: default Cloud Run Job for `perform_via :cloud_run_job`.
+  config.solid_gcp.cloud_run_job_name      = ENV["SOLID_GCP_CLOUD_RUN_JOB"]
+
+  # Optional realtime refresh (Firestore-backed Turbo morphs). Defaults on
+  # (:firestore); set to :off to disable. Cable project falls back to the queue
+  # project (SOLID_GCP_PROJECT) when SOLID_GCP_CABLE_PROJECT is unset.
+  # config.solid_gcp.cable.mode = :off
+  config.solid_gcp.cable.project = ENV["SOLID_GCP_CABLE_PROJECT"] if ENV["SOLID_GCP_CABLE_PROJECT"].present?
+  config.solid_gcp.cable.signer_email = ENV["SOLID_GCP_CABLE_SIGNER_EMAIL"] if ENV["SOLID_GCP_CABLE_SIGNER_EMAIL"].present?
+  if ENV["SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG"].present?
+    config.solid_gcp.cable.firebase_web_config = JSON.parse(ENV["SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG"])
+  end
+end

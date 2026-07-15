@@ -7,7 +7,7 @@ module SolidGcp
     attr_accessor :project, :location, :push_base_url,
                   :invoker_service_account, :default_concurrency_duration,
                   :cloud_run_job_name, :connects_to, :recurring_file
-    attr_accessor :queue_prefix
+    attr_accessor :queue_prefix, :max_task_bytes
     attr_writer :mode, :oidc_audience, :verify_oidc
 
     def initialize
@@ -15,6 +15,10 @@ module SolidGcp
       @queue_prefix = "solid-gcp-"
       @default_concurrency_duration = 15.minutes
       @recurring_file = "config/recurring.yml"
+      # Cloud Tasks caps total HTTP task size (URL + headers + body) at ~1 MB.
+      # Default leaves headroom for the OIDC token, URL and headers Cloud Tasks
+      # adds around our JSON body.
+      @max_task_bytes = 900_000
       @oidc_audience = nil
       @verify_oidc = nil
     end

@@ -5,12 +5,22 @@ module SolidGcp
     # Real Cloud Tasks backend. The client is constructor-injectable so tests
     # can assert request shape without touching Google or requiring credentials.
     class CloudTasks
+      # config key => the env var the recommended initializer wires it from,
+      # surfaced in the ConfigurationError so a missing key is actionable.
+      REQUIRED_CONFIG = {
+        project: "SOLID_GCP_PROJECT",
+        location: "SOLID_GCP_LOCATION",
+        push_base_url: "SOLID_GCP_PUSH_BASE_URL",
+        invoker_service_account: "SOLID_GCP_INVOKER_SA"
+      }.freeze
+
       def initialize(client: nil, config: SolidGcp.config)
         @injected_client = client
         @config = config
       end
 
       def enqueue(queue:, path:, body:, schedule_time: nil, name: nil)
+        validate_config!
         parent = client.queue_path(
           project: @config.project,
           location: @config.location,
@@ -49,6 +59,20 @@ module SolidGcp
       end
 
       private
+
+      # Fail fast with the missing key (and its env var) rather than crashing on
+      # a nil deep inside the Cloud Tasks client. Enables tolerant boot-time
+      # config (ENV[...] may be nil during asset precompile / image build).
+      def validate_config!
+        REQUIRED_CONFIG.each do |key, env|
+          value = @config.public_send(key)
+          next unless value.nil? || (value.respond_to?(:empty?) && value.empty?)
+
+          raise ConfigurationError,
+            "SolidGcp.config.#{key} is not set (expected from #{env}); " \
+            "cannot enqueue a Cloud Tasks task."
+        end
+      end
 
       def already_exists?(error)
         defined?(Google::Cloud::AlreadyExistsError) && error.is_a?(Google::Cloud::AlreadyExistsError)

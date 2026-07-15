@@ -7,9 +7,11 @@ module SolidGcp
     module_function
 
     def run
-      Semaphore.expire_stale
-      BlockedJob.redispatch_expired
-      reschedule_if_outstanding
+      ActiveSupport::Notifications.instrument("sweep.solid_gcp") do
+        Semaphore.expire_stale
+        BlockedJob.redispatch_expired
+        reschedule_if_outstanding
+      end
     end
 
     def reschedule_if_outstanding
