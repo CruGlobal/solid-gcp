@@ -84,9 +84,10 @@ SOLID_GCP_INVOKER_SA, SOLID_GCP_CLOUD_RUN_JOB
    *Caveat:* the `path:` gem dependency lives outside the Docker build context;
    a real build needs the published gem or a repo-root build context (see the
    Dockerfile header). Flightdeck will use the published gem.
-2. **Infra** — the Terraform module in `../terraform` provisions Cloud Tasks
-   queues, invoker/enqueuer service accounts + IAM, Cloud Run service + Job, and
-   Artifact Registry (sandbox project `cru-mattdrees-sandbox-poc`).
+2. **Infra** — the solid-gcp Terraform module (cru-terraform-modules
+   `applications/solid-gcp`, instantiated by `../terraform/sandbox`) provisions
+   Cloud Tasks queues, invoker/enqueuer service accounts + IAM. The Cloud Run
+   service + Job and Artifact Registry were created by hand in the sandbox.
 3. **Recurring** — `config/recurring.yml` (Solid Queue format) is synced to
    Cloud Scheduler with `bin/rails solid_gcp:scheduler:sync`; each entry POSTs
    (OIDC) to `/solid_gcp/recurring/<key>`.
