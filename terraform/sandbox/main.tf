@@ -1,5 +1,7 @@
 module "solid_gcp" {
-  source = "../modules/solid_gcp"
+  # TODO: pin to the release tag once cru-terraform-modules PR #685 merges and
+  # release-please tags it (v40.2.0 or later).
+  source = "git@github.com:CruGlobal/cru-terraform-modules.git//applications/solid-gcp?ref=main"
 
   providers = {
     google      = google
@@ -13,12 +15,9 @@ module "solid_gcp" {
   app_service_account_email = var.app_service_account_email
   cloud_run_job_name        = var.cloud_run_job_name
 
-  # Cable component (Firestore/Firebase). The existing (default) Firestore DB in
-  # this sandbox already lives in us-east1, so pin firestore_location to match it
-  # (otherwise the imported DB would plan a location change). Overrides the
-  # var.region default.
+  # Cable component (Firestore/Firebase).
   enable_cable       = true
-  firestore_location = "us-east1"
+  firestore_location = var.firestore_location
 
   # queue_names defaults to ["default", "ingest", "mailers"].
 
