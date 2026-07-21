@@ -145,7 +145,7 @@ hours free tier–dominated: **< $1/mo** at Flightdeck scale, vs ~$45/mo of pinn
 - Test mode: `SolidGcp::Testing` in-memory queue with `perform_enqueued_jobs`-style
   helpers; standard `:test` adapter continues to work.
 
-## Infra (terraform/)
+## Infra (terraform module — now in cru-terraform-modules `applications/solid-gcp`)
 
 Module for the dummy app (later reusable for Flightdeck): Cloud Tasks queues
 (default, ingest, mailers), invoker + enqueuer service accounts, IAM, Cloud Scheduler
@@ -160,7 +160,7 @@ Sandbox project: cru-mattdrees-sandbox-poc.
 ```
 gem/          solid_gcp gem (engine, adapter, concurrency, launcher, rake tasks)
 dummy/        dummy Rails app (guinea pig; also the integration-test harness)
-terraform/    GCP infra module + sandbox instantiation
+terraform/    sandbox instantiation (module itself lives in cru-terraform-modules)
 docs/         this plan, design notes
 ```
 
@@ -191,6 +191,7 @@ docs/         this plan, design notes
 - ~~Solid Cache/Cable out of scope for this repo — agreed?~~ Resolved 2026-07-14:
   Cable partially in scope (Turbo refresh via Firestore; Yjs stays on ActionCable).
   Solid Cache still out of scope.
-- ~~Terraform here vs cru-terraform conventions — sandbox-only OK for now?~~ Resolved:
-  colocated-module policy — module lives here (gem-coupled), instantiation/state in
-  cru-terraform, sandbox/ temporary exception.
+- ~~Terraform here vs cru-terraform conventions — sandbox-only OK for now?~~ Resolved
+  2026-07-17 (after devops discussion): module lives in cru-terraform-modules
+  (`applications/solid-gcp`); instantiation/state in cru-terraform; sandbox/ stays
+  here as a hand-applied dev harness.

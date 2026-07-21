@@ -1,193 +1,62 @@
 # solid_gcp — Terraform
 
-GCP infrastructure for the `solid_gcp` Active Job backend. See `../docs/PLAN.md`
-and `../docs/DESIGN.md` for the architecture. This tree provisions the pieces the
-gem needs at runtime; it does **not** provision the Rails app image, the Cloud Run
-service/job themselves, or individual Cloud Scheduler jobs (those are handled
-elsewhere — see below).
+The `solid_gcp` Terraform module lives in
+[cru-terraform-modules](https://github.com/CruGlobal/cru-terraform-modules/tree/main/applications/solid-gcp)
+(`applications/solid-gcp`) — see its README for what it creates, the gem↔module
+contract (queue prefix, push route, OIDC identity, outputs → env vars), and
+usage. It moved there from this repo per the devops-team convention that all
+Cru terraform modules live in that repo (shared style/tflint/provider-version
+enforcement, release tagging via release-please).
 
-## Module home & consumption
-
-This module lives here (rather than in cru-terraform) because it is
-contract-coupled to the `solid_gcp` gem — per the
-[colocated-modules policy](https://github.com/CruGlobal/cru-terraform-modules/blob/main/docs/colocated-modules.md).
-This repo's git tags equal the gem version, so `?ref=vX.Y.Z` pins gem + module
-together.
+Because the gem and module now version independently, contract-affecting
+changes must land in both places: note required module versions in this repo's
+`CHANGELOG.md`, and gem compatibility in the module's README.
 
 - **Real instantiation** (config + state) belongs in **cru-terraform**, sourcing:
   ```hcl
-  source = "git@github.com:CruGlobal/solid-gcp.git//terraform/modules/solid_gcp?ref=vX.Y.Z"
+  source = "git@github.com:CruGlobal/cru-terraform-modules.git//applications/solid-gcp?ref=vX.Y.Z"
   ```
-- **`sandbox/`** is a temporary, hand-applied exception for
-  `cru-mattdrees-sandbox-poc` only — not managed state. It will graduate to
-  cru-terraform.
-- **Guardrail:** root `CODEOWNERS` routes `/terraform/` to
-  `@CruGlobal/devops-engineering-team`, and the shared reusable CI workflow
-  (`.github/workflows/terraform.yml`) runs fmt/validate/tflint on changes here.
+- **`sandbox/`** (this directory) is a hand-applied dev instantiation — local
+  state, not managed by Atlantis.
 
-## Layout
+## Sandbox
 
-```
-terraform/
-  modules/solid_gcp/   reusable module (queues, invoker SA, IAM, API enablement)
-  sandbox/             instantiation for Matt's sandbox (cru-mattdrees-sandbox-poc)
-```
-
-## What the module creates
-
-- **Cloud Tasks queues** — one per Active Job queue (`queue_names`, default
-  `default`, `ingest`, `mailers`), named `solid-gcp-<name>` to match the gem's
-  `queue_prefix`. Each gets `rate_limits` and `retry_config` (defaults:
-  max_attempts 100, min_backoff 5s, max_backoff 300s, max_doublings 5), overridable
-  per queue via `queue_overrides`. **Ingest-storm containment** (Flightdeck FD-315)
-  lives on the `ingest` queue — tighten its dispatch limits there.
-- **Invoker service account** (`solid-gcp-invoker`) — the identity in the OIDC
-  tokens Cloud Tasks attaches to each push. Granted `roles/run.invoker` on the
-  receiving Cloud Run service (only when `service_name` is set). The engine's OIDC
-  verifier checks the incoming token's email against this SA.
-- **App runtime SA IAM** (the enqueuer side):
-  - `roles/cloudtasks.enqueuer` — granted **per queue** (least privilege), so the
-    app can only enqueue on solid_gcp's queues.
-  - `roles/iam.serviceAccountUser` on the invoker SA — required to create tasks that
-    carry the invoker SA's OIDC identity (act-as).
-  - `roles/run.developer` on the Cloud Run **Job** (only when `cloud_run_job_name`
-    is set) — for launching `perform_via :cloud_run_job` executions. See IAM note
-    below.
-- **API enablement** — `cloudtasks`, `cloudscheduler`, `run`, `iam`.
-
-### Cable component (`enable_cable`, default false)
-
-When `enable_cable = true` the module also provisions the Firestore-backed Turbo
-refresh streams (`SolidGcp::Cable`). These resources use the **google-beta**
-provider, so the consumer must pass one (`providers = { google = google,
-google-beta = google-beta }`). Created:
-
-- **Firestore** — `(default)` native-mode database (`firestore_location`, defaults
-  to `region`) + a TTL policy on `expires_at` for the streams collection
-  (`cable_collection`, default `solid_gcp_streams`) so stream docs self-reap.
-- **Firebase** — project add-on (`google_firebase_project`) + a web app; the web
-  SDK config (apiKey / authDomain / projectId) is surfaced as the
-  `firebase_web_config` output.
-- **Identity Platform** — `google_identity_platform_config` (enables Firebase Auth
-  so Rails-minted custom tokens work).
-- **Firestore security rules** — ruleset + release on `cloud.firestore`; allows only
-  doc-level `get` on `cable_collection`, gated on the token's `sgs` claim (no
-  writes, no list). Collection name is parameterized to match `cable_collection`.
-- **Runtime-SA IAM** — `roles/datastore.user` (project) + `roles/iam.serviceAccountTokenCreator`
-  granted to `app_service_account_email` **on itself** (so it can IAM-signBlob its
-  own Firebase custom tokens, no key file).
-
-Flaky-apply notes: `google_firebase_project` on an already-Firebase-enabled project
-and an existing `(default)` Firestore database must be **imported** rather than
-created (they 409 / already exist). `google_identity_platform_config` 409s if
-Identity Platform was already initialized. See the sandbox note below for exact
-import commands.
-
-### IAM role choice for launching the Cloud Run Job
-
-The launcher calls the Cloud Run Admin API `jobs.run` **with container overrides**
-(passing `SOLID_GCP_ENVELOPE` as an env var), which requires the
-`run.jobs.runWithOverrides` permission. `roles/run.invoker` historically did **not**
-include that permission (Google issue tracker 298810674), so the module grants
-`roles/run.developer` scoped to the single job resource — it includes both
-`run.jobs.run` and `run.jobs.runWithOverrides`. The binding is scoped to that one
-job (via `google_cloud_run_v2_job_iam_member`), not project-wide.
-
-## Consumer app configuration
-
-The Rails app (dummy app, later Flightdeck) needs these env vars, mapping to
-`SolidGcp.config`:
-
-| Env var | Source | Notes |
-|---|---|---|
-| `SOLID_GCP_PROJECT` | `project_id` | GCP project id |
-| `SOLID_GCP_LOCATION` | `region` | queue/scheduler/job location |
-| `SOLID_GCP_PUSH_BASE_URL` | module output `push_base_url` | public base URL of the Cloud Run service; Cloud Tasks target + OIDC audience |
-| `SOLID_GCP_INVOKER_SA` | module output `invoker_service_account_email` | OIDC identity set on tasks and verified on receipt |
-| `SOLID_GCP_CABLE_FIREBASE_WEB_CONFIG` | module output `firebase_web_config` | (cable only) JSON `{apiKey, authDomain, projectId}` for `cable.firebase_web_config`; apiKey is a public web identifier, not a secret |
-
-The app must **run as** `app_service_account_email` (the SA this module grants
-enqueuer / serviceAccountUser / run.developer to).
-
-## Deploy pipeline (scheduler sync)
-
-Terraform intentionally does **not** manage individual Cloud Scheduler jobs. The gem
-owns them: `rake solid_gcp:scheduler:sync` reads `config/recurring.yml` and idempotently
-upserts one Cloud Scheduler job per key (`solid-gcp-<key>`, target
-`push_base_url + /solid_gcp/recurring/<key>`, OIDC as the invoker SA).
-
-Whatever identity runs that sync (the deploy pipeline / release job — **not** the app
-runtime SA) needs, in this project:
-
-- `roles/cloudscheduler.admin` — create/update/delete scheduler jobs.
-- `roles/iam.serviceAccountUser` on the invoker SA — so scheduler jobs can be
-  configured to push as the invoker SA's OIDC identity.
-
-These are deliberately kept off the app runtime SA (it never touches Scheduler at
-runtime).
-
-## Usage
-
-```hcl
-module "solid_gcp" {
-  source = "./modules/solid_gcp"
-
-  project_id                = "my-project"
-  region                    = "us-central1"
-  service_name              = "my-app"                 # Cloud Run service receiving pushes
-  push_base_url             = "https://my-app-xxxx.run.app"
-  app_service_account_email = "my-app@my-project.iam.gserviceaccount.com"
-  cloud_run_job_name        = "my-app-import"          # optional
-  # queue_names defaults to ["default", "ingest", "mailers"]
-
-  queue_overrides = {
-    ingest = { max_dispatches_per_second = 5, max_concurrent_dispatches = 3 }
-  }
-}
-```
-
-## Sandbox first-apply (imports needed)
-
-`sandbox/` has never been applied (no tfstate), so the first apply creates all the
-queue-side resources from scratch. But the sandbox project
-(`cru-mattdrees-sandbox-poc`) already has some cable resources live, which will
-**409 on create** — import them into state first, then apply:
+Per-developer values live in `terraform.tfvars` (gitignored) — copy
+`terraform.tfvars.example` and fill in your own sandbox project. Cloning the
+module source requires SSH access to the (private) cru-terraform-modules repo.
 
 ```sh
 cd sandbox
 terraform init
-
-# Firebase project add-on is already active (import id = project id):
-terraform import 'module.solid_gcp.google_firebase_project.cable[0]' cru-mattdrees-sandbox-poc
-
-# Firestore (default) database already exists (FIRESTORE_NATIVE):
-terraform import 'module.solid_gcp.google_firestore_database.cable[0]' '(default)'
-
 terraform apply
 ```
 
-Notes on the sandbox as verified 2026-07-14:
-- All 5 cable APIs are already enabled — `google_project_service.cable_apis` is a
-  no-op (safe, not disabled on destroy).
-- Identity Platform config does **not** exist yet (`CONFIGURATION_NOT_FOUND`) —
-  `google_identity_platform_config.cable[0]` creates cleanly, no import.
-- If a later run hits a 409 on identity platform (already initialized), import it:
-  `terraform import 'module.solid_gcp.google_identity_platform_config.cable[0]' cru-mattdrees-sandbox-poc`
+(`tofu` works as a drop-in for `terraform`.)
 
-## Validate
+### First apply on a project with existing Firebase resources
 
-No apply is performed here. To format and validate:
+Some cable resources 409 on create when they already exist — import first (see
+the module README's "Adopting on a project with existing Firebase" for the full
+list):
 
 ```sh
-terraform fmt -recursive
-cd sandbox && terraform init -backend=false && terraform validate
-cd ../modules/solid_gcp && terraform init -backend=false && terraform validate
+terraform import 'module.solid_gcp.google_firebase_project.cable[0]' <project-id>
+terraform import 'module.solid_gcp.google_firestore_database.cable[0]' '(default)'
 ```
 
-(`tofu` works as a drop-in for `terraform` in the commands above.)
+### Iterating on the module
+
+For module changes, PR cru-terraform-modules. While developing, point the
+sandbox `source` at your branch (`?ref=<branch>`) or a local clone
+(`source = "../../..../cru-terraform-modules/applications/solid-gcp"`), then
+restore the pinned tag before merging here.
 
 ## Notes
-- Artifact Registry repo `solid-gcp` (us-central1, docker) was created by hand
-  via gcloud for the dummy deploy. Intentionally NOT in the module: image
-  registries belong to the consuming app's deploy infra (Flightdeck's lives in
-  cru-terraform), not to solid_gcp's contract surface.
+
+- The consuming app's deploy infra (Cloud Run service/job, Artifact Registry,
+  image pipeline) is intentionally NOT part of the module — it belongs to the
+  app (Flightdeck's lives in cru-terraform). The sandbox's `solid-gcp-dummy`
+  Artifact Registry repo was created by hand via gcloud.
+- Individual Cloud Scheduler jobs are owned by the gem
+  (`rake solid_gcp:scheduler:sync`), not terraform — see the module README for
+  the deploy-pipeline IAM that sync needs.

@@ -1,10 +1,16 @@
 # Changelog
 
-Versions cover the whole repo: the `solid_gcp` gem and the Terraform module
-share one tag (`vX.Y.Z`), so a Gemfile `tag:` pin and a Terraform `?ref=` pin
-name the same tested combination.
+Versions cover the `solid_gcp` gem (repo tags `vX.Y.Z`). The companion Terraform
+module lives in [cru-terraform-modules](https://github.com/CruGlobal/cru-terraform-modules/tree/main/applications/solid-gcp)
+and versions independently — entries here call out when a gem release needs a
+module update. (Through v0.2.0 the module lived in this repo and shared the gem's
+tag.)
 
 ## [Unreleased]
+
+- Terraform module moved to cru-terraform-modules (`applications/solid-gcp`),
+  per devops convention; `terraform/` here retains only the sandbox
+  instantiation, now parameterized per developer via `terraform.tfvars`.
 
 ## [0.2.0] - 2026-07-15
 

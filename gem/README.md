@@ -66,20 +66,22 @@ bin/rails g solid_gcp:install
 bin/rails db:migrate
 ```
 
-Provision the GCP infrastructure (Cloud Tasks queues, service accounts + IAM,
-Cloud Scheduler jobs, Cloud Run service + Job) with this repo's Terraform module,
-pinned to the **same tag** as the gem — one tag names one tested gem+infra combination:
+Provision the GCP infrastructure (Cloud Tasks queues, service accounts + IAM)
+with the companion Terraform module, which lives in
+[cru-terraform-modules](https://github.com/CruGlobal/cru-terraform-modules/tree/main/applications/solid-gcp):
 
 ```hcl
 module "solid_gcp" {
-  source = "git::https://github.com/CruGlobal/solid-gcp.git//terraform?ref=v0.1.0"
+  source = "git@github.com:CruGlobal/cru-terraform-modules.git//applications/solid-gcp?ref=vX.Y.Z"
   # ...
 }
 ```
 
-The module grants all IAM the gem needs (task creation, OIDC token minting for the
-invoker SA, `jobs.run`, scheduler management). If you provision by hand instead, see
-`../terraform` for the exact roles.
+The gem and module version independently; the module README states which gem
+versions it's compatible with, and this repo's CHANGELOG calls out releases that
+need a module update. The module grants all IAM the gem needs (task creation,
+OIDC token minting for the invoker SA, `jobs.run`, scheduler management). If you
+provision by hand instead, see the module README for the exact roles.
 
 ## Configuration reference
 

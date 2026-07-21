@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (gitignored) and fill in your sandbox's values.
+
+project_id                = "cru-yourname-sandbox"
+push_base_url             = "https://solid-gcp-dummy-<project-number>.us-central1.run.app"
+app_service_account_email = "<project-number>-compute@developer.gserviceaccount.com"
+
+# Only if your project's existing (default) Firestore DB lives outside var.region:
+# firestore_location = "us-east1"
