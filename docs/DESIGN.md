@@ -259,7 +259,7 @@ lib/generators/solid_gcp/cable_install/...   # copies JS controller + firestore.
 |---|---|---|
 | `mode` | `:firestore` | `:firestore` \| `:test` \| `:off` (no-op); warn-once no-op when `:firestore` without a resolvable project |
 | `project` | `SolidGcp.config.project` | Firestore/Firebase project |
-| `database` | `"(default)"` | Firestore database id |
+| `database` | `"(default)"` | Firestore database id; a named database is also emitted to the client as `databaseId` and must match the terraform module's `firestore_database_id` |
 | `collection` | `"solid_gcp_streams"` | must match rules + terraform |
 | `signer_email` | nil → ADC/metadata SA | SA whose key signs custom tokens (needs self `iam.serviceAccounts.signBlob`) |
 | `firebase_web_config` | `{}` | `{apiKey:, projectId:, ...}` exposed to the client helper |

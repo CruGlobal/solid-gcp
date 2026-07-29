@@ -27,11 +27,21 @@ module SolidGcp
       config = emulator_defaults(cable)
         .merge(cable.firebase_web_config)
         .merge("tokenPath" => token_path)
+        .merge(named_database(cable))
 
       tag.script(config.to_json.html_safe, type: "application/json", id: "solid-gcp-cable-config")
     end
 
     private
+
+    # Only emitted for a named database. `getFirestore(app, undefined)` targets
+    # "(default)", so omitting the key keeps the client on the default database.
+    def named_database(cable)
+      database = cable.database
+      return {} if database.nil? || database == Configuration::CableConfiguration::DEFAULT_DATABASE
+
+      { "databaseId" => database }
+    end
 
     # When an emulator host is configured, the client needs the host(s) plus a
     # projectId/apiKey to `initializeApp` (any apiKey works against emulators).

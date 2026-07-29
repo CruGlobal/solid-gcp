@@ -8,6 +8,15 @@ tag.)
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-29
+
+- Cable: named Firestore databases. `config.cable.database` already reached the
+  server's REST calls, but the browser was pinned to `(default)` — the client
+  now receives a `databaseId` key and passes it to `getFirestore`. Emitted only
+  when the database is not `(default)`, so existing apps see no change. Pair
+  with `firestore_database_id` in the Terraform module; a named database lets
+  `deletion_policy = "DELETE"` drop just the cable's data instead of every
+  Firestore collection in the project.
 - Terraform module moved to cru-terraform-modules (`applications/solid-gcp`),
   per devops convention; `terraform/` here retains only the sandbox
   instantiation, now parameterized per developer via `terraform.tfvars`.

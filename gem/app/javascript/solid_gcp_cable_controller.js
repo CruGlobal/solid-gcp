@@ -89,7 +89,9 @@ async function fetchToken(signedNames) {
 async function establishSession() {
   const app = firebaseApp()
   const auth = getAuth(app)
-  registry.db = getFirestore(app)
+  // databaseId is absent unless the app configures a named database; the SDK
+  // falls back to "(default)" when it is undefined.
+  registry.db = getFirestore(app, readConfig().databaseId)
   connectEmulators(auth, registry.db)
   if (!registry.signedIn) {
     const token = await fetchToken(Array.from(registry.streams.keys()))

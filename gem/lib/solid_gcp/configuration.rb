@@ -49,6 +49,10 @@ module SolidGcp
     # Optional realtime-refresh component. Defaults keep it fully off and
     # network-free until `mode` is set to :firestore or :test.
     class CableConfiguration
+      # Firestore's implicit database id. Any other value is a "named" database,
+      # which the client SDK must be told about explicitly (see CableHelper).
+      DEFAULT_DATABASE = "(default)"
+
       attr_accessor :database, :collection, :signer_email,
                     :firebase_web_config, :stream_ttl, :token_ttl,
                     :touch_debounce
@@ -57,7 +61,7 @@ module SolidGcp
       def initialize(parent)
         @parent = parent
         @mode = :firestore
-        @database = "(default)"
+        @database = DEFAULT_DATABASE
         @collection = "solid_gcp_streams"
         @signer_email = nil
         @firebase_web_config = {}

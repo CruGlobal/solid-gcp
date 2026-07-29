@@ -92,7 +92,9 @@ async function establishSession() {
     await signInWithCustomToken(getAuth(app), token)
     registry.signedIn = true
   }
-  registry.db = getFirestore(app)
+  // databaseId is absent unless the app configures a named database; the SDK
+  // falls back to "(default)" when it is undefined.
+  registry.db = getFirestore(app, readConfig().databaseId)
 }
 
 // One connect attempt: (re)establish the session, then attach any missing
