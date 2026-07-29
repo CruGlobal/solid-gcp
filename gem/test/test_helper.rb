@@ -90,6 +90,7 @@ module SolidGcp
       SolidGcp.config.project = "test-project"
       SolidGcp.config.cable.mode = :off
       SolidGcp.config.cable.project = nil
+      SolidGcp.config.cable.database = Configuration::CableConfiguration::DEFAULT_DATABASE
       SolidGcp.config.cable.firestore_emulator_host = nil
       SolidGcp.config.cable.auth_emulator_host = nil
       SolidGcp.config.cable.touch_debounce = 1.second

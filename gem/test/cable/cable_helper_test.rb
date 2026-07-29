@@ -33,6 +33,16 @@ class CableHelperTest < SolidGcp::TestCase
     assert_equal "emulator-api-key", json["apiKey"]
   end
 
+  test "no databaseId emitted for the default database" do
+    refute config_json.key?("databaseId")
+  end
+
+  test "databaseId emitted for a named database" do
+    SolidGcp.config.cable.database = "solid-gcp-streams"
+
+    assert_equal "solid-gcp-streams", config_json["databaseId"]
+  end
+
   test "explicit firebase_web_config wins over emulator defaults" do
     SolidGcp.config.cable.firestore_emulator_host = "127.0.0.1:8080"
     SolidGcp.config.cable.firebase_web_config = {
