@@ -8,6 +8,8 @@ tag.)
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-29
+
 - Cable: named Firestore databases. `config.cable.database` already reached the
   server's REST calls, but the browser was pinned to `(default)` — the client
   now receives a `databaseId` key and passes it to `getFirestore`. Emitted only
