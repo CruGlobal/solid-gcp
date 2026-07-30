@@ -1,0 +1,35 @@
+version: 2
+
+updates:
+  # Both lockfiles in one config (note `directories`, plural) so a bump that
+  # affects gem/ and dummy/ arrives as ONE pull request instead of the pair per
+  # advisory we were getting.
+  - package-ecosystem: bundler
+    directories:
+      - "/gem"
+      - "/dummy"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # These two group names are the auto-merge allowlist — see
+      # .github/workflows/dependabot-auto-merge.yml. Anything outside them
+      # (minor, major) comes as its own PR and waits for a human.
+      bundler-patch:
+        applies-to: version-updates
+        update-types: [ "patch" ]
+      bundler-security:
+        applies-to: security-updates
+        patterns: [ "*" ]
+
+  # Workflow action versions. Not auto-merged: these bumps are usually major
+  # (v4 -> v5) and can change runner behavior.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: [ "*" ]
