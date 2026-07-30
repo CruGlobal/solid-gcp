@@ -27,6 +27,7 @@ module SolidGcp
       config = emulator_defaults(cable)
         .merge(cable.firebase_web_config)
         .merge("tokenPath" => token_path)
+        .merge("listenTimeoutMs" => (cable.listen_timeout.to_f * 1000).round)
         .merge(named_database(cable))
 
       tag.script(config.to_json.html_safe, type: "application/json", id: "solid-gcp-cable-config")

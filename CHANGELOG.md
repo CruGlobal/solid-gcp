@@ -8,6 +8,35 @@ tag.)
 
 ## [Unreleased]
 
+- Cable: the Stimulus controller is served by the engine (importmap pin) instead
+  of being copied into apps, and `cable_install` now just registers it in
+  `app/javascript/controllers/index.js`. There were three diverging copies of that
+  file — the generator's was two features behind, so `cable_install` installed a
+  client that subscribed to the `(default)` Firestore database (reintroducing the
+  bug 0.3.0 fixed) and had no emulator support (so the documented emulator dev
+  flow silently talked to real Firestore). `--vendor` copies the shipped file for
+  apps that bundle JS with esbuild/webpack.
+  **Upgrading:** delete any vendored `app/javascript/controllers/solid_gcp_cable_controller.js`
+  and re-run `bin/rails generate solid_gcp:cable_install`.
+- Cable: a listener the server hasn't answered within the new
+  `config.cable.listen_timeout` (10s) is reported — `console.error` plus the
+  existing `solid-gcp-cable:failed` event — and so are terminal Firestore codes
+  (`not-found`, `invalid-argument`, `failed-precondition`, `unimplemented`), which
+  also detach. A listen against a database that doesn't exist retries forever
+  without ever erroring, so nothing else noticed: auth succeeded, the channel
+  200d, the feature had simply never worked. Transient errors on a doc that has
+  never gone live now get one `console.warn` rather than a hidden `console.debug`.
+- Cable: cache-sourced snapshots are ignored (`metadata.fromCache`). Firestore
+  serves one immediately from its local cache when it can't reach the backend, so
+  the client used to announce a doc as live — `solid-gcp-cable:listening` and
+  `data-solid-gcp-cable-listening` — for a listener that was dead. Both now mean
+  the server answered. Refreshes are likewise only triggered by server-confirmed
+  changes.
+- CI: the cable client is covered end to end on every PR by a system test against
+  the prebuilt Firebase emulators image (no GCP credentials), using a *named*
+  Firestore database. The credential-gated live-Firestore test remains for
+  release checks.
+
 ## [0.4.0] - 2026-07-30
 
 - Recurring: `recurring.yml` is parsed with `ActiveSupport::ConfigurationFile`,

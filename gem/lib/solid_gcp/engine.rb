@@ -25,6 +25,23 @@ module SolidGcp
       end
     end
 
+    # Ship the cable Stimulus controller from the gem instead of having every app
+    # vendor its own copy (which is how the client came to subscribe to the
+    # "(default)" database long after the gem had learned about named ones).
+    # Mirrors turbo-rails: engine importmap + the asset path it resolves against.
+    initializer "solid_gcp.cable.importmap", before: "importmap" do |app|
+      if app.config.respond_to?(:importmap)
+        app.config.importmap.paths << Engine.root.join("config/importmap.rb")
+        app.config.importmap.cache_sweepers << Engine.root.join("app/javascript")
+      end
+    end
+
+    initializer "solid_gcp.cable.assets" do |app|
+      if app.config.respond_to?(:assets)
+        app.config.assets.paths << Engine.root.join("app/javascript")
+      end
+    end
+
     initializer "solid_gcp.connects_to" do
       config.after_initialize do
         # Record picks up connects_to lazily; nothing to do here unless configured.

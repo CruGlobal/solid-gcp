@@ -249,8 +249,9 @@ lib/solid_gcp/cable/test_sink.rb             # :test mode capture
 app/jobs/solid_gcp/cable/touch_job.rb        # touch_later rides the queue component
 app/controllers/solid_gcp/cable_tokens_controller.rb
 app/helpers/solid_gcp/cable_helper.rb
-app/javascript/solid_gcp_cable_controller.js # canonical Stimulus controller (copied)
-lib/generators/solid_gcp/cable_install/...   # copies JS controller + firestore.rules
+app/javascript/solid_gcp_cable_controller.js # the Stimulus controller (served, not copied)
+config/importmap.rb                          # pins it for host apps (engine importmap)
+lib/generators/solid_gcp/cable_install/...   # registers the controller + firestore.rules
 ```
 
 ## Configuration (`SolidGcp.config.cable.*`)
@@ -266,6 +267,7 @@ lib/generators/solid_gcp/cable_install/...   # copies JS controller + firestore.
 | `stream_ttl` | 30.days | sets `expires_at` on stream docs (Firestore TTL policy reaps) |
 | `token_ttl` | 55.minutes | custom-token exp (Firebase cap 1h) |
 | `touch_debounce` | 1.second | trailing coalesce window for `touch_later`; `nil`/0 disables |
+| `listen_timeout` | 10.seconds | client-side deadline for a listener's first server snapshot; past it the client reports the listener dead (`listenTimeoutMs` in the config tag) |
 
 ## Server API
 
@@ -314,7 +316,7 @@ claims `{"sgs": [doc ids]}`. Signature via IAM Credentials REST `signBlob`
 streams per request (422) — a page should never need more. Response
 `{"token": jwt}`.
 
-## Client (Stimulus controller, copied by generator)
+## Client (Stimulus controller, served by the engine)
 
 - Helper `firestore_stream_from(*streamables)` →
   `<div hidden data-controller="solid-gcp-cable" data-solid-gcp-cable-signed-name-value="…" data-solid-gcp-cable-doc-value="<collection>/<doc id>">`.
@@ -322,9 +324,12 @@ streams per request (422) — a page should never need more. Response
   with firebase_web_config + token endpoint path.
 - Controller behavior: on connect, register stream in a page-level module registry;
   microtask-debounced single `fetch` of the token for all registered streams → one
-  `signInWithCustomToken` → one `onSnapshot` per doc. Skip the initial snapshot;
-  on any subsequent snapshot, debounce 300ms, then `Turbo.session.refresh(location.href)`
-  when Turbo ≥8 is present, else dispatch `solid-gcp-cable:refresh` on `document`.
+  `signInWithCustomToken` → one `onSnapshot` per doc. Ignore cache-sourced snapshots
+  (`metadata.fromCache`: Firestore serves those when it can't reach the backend, so
+  they prove nothing and — the server being the only writer — say nothing); skip the
+  first server snapshot; on any subsequent one, debounce 300ms, then
+  `Turbo.session.refresh(location.href)` when Turbo ≥8 is present, else dispatch
+  `solid-gcp-cable:refresh` on `document`.
   On disconnect (page nav), unsubscribe listeners and cancel retry/refresh timers.
   Failure handling: unified jittered exponential backoff (1s base, ×2, cap 60s,
   ±50%, max 8 attempts → single console.warn + `solid-gcp-cable:failed` event)
@@ -333,6 +338,15 @@ streams per request (422) — a page should never need more. Response
   SDK auto-refreshes ID tokens with claims intact) force a fresh token + re-sign-in
   through the same loop; `online` / visibility→visible resets a stalled backoff.
   Transport errors are left to Firestore's own reconnect.
+- **Dead-listener detection**: a listener the server hasn't answered within
+  `cable.listen_timeout` (emitted to the client as `listenTimeoutMs`) is reported —
+  `console.error` + `solid-gcp-cable:failed` — as are terminal error codes
+  (`not-found`, `invalid-argument`, `failed-precondition`, `unimplemented`), which
+  also detach. Necessary because the SDK retries a listen against a nonexistent
+  database forever without erroring: auth succeeds, the channel 200s, nothing works.
+  Transient errors on a doc that has never gone live get one `console.warn` (not
+  `debug`, which browsers hide) — silence indistinguishable from success is what let
+  a stale client ship broken for a release.
 - Host app owns the `firebase` JS dep (`firebase/app`, `firebase/auth`,
   `firebase/firestore` — full, not `lite`; lite lacks `onSnapshot`).
 

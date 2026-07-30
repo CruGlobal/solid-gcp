@@ -55,7 +55,7 @@ module SolidGcp
 
       attr_accessor :database, :collection, :signer_email,
                     :firebase_web_config, :stream_ttl, :token_ttl,
-                    :touch_debounce
+                    :touch_debounce, :listen_timeout
       attr_writer :mode, :project, :firestore_emulator_host, :auth_emulator_host
 
       def initialize(parent)
@@ -68,6 +68,11 @@ module SolidGcp
         @stream_ttl = 30.days
         @token_ttl = 55.minutes
         @touch_debounce = 1.second
+        # How long the client waits for a listener's initial snapshot before
+        # reporting it dead (console.error + `solid-gcp-cable:failed`). A listen
+        # against a database that doesn't exist retries forever in silence, so
+        # this timeout is the only thing that notices.
+        @listen_timeout = 10.seconds
       end
 
       attr_reader :mode
