@@ -1,0 +1,6 @@
+# Solid Queue reads recurring.yml through ActiveSupport::ConfigurationFile, so
+# ERB works there; this pins that it works here too.
+test:
+  cleanup:
+    class: RecordingJob
+    schedule: every day at <%= ENV.fetch("SOLID_GCP_TEST_CLEANUP_HOUR", "3") %>am

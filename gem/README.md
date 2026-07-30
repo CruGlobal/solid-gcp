@@ -215,6 +215,8 @@ Use Solid Queue's `config/recurring.yml` format (`class:`/`command:`, `args:`, `
 (plus `shared`), including the idiomatic `default: &default` anchor merged into
 each env with `<<: *default`. An env-scoped file with no section for the current
 env raises `ConfigurationError` rather than reading the section names as job keys.
+The file is parsed the way Solid Queue parses it (`ActiveSupport::ConfigurationFile`),
+so ERB works: `schedule: every day at <%= ENV.fetch("CLEANUP_HOUR", "3") %>am`.
 
 Sync it to Cloud Scheduler idempotently:
 
