@@ -11,7 +11,7 @@ const registry = {
   app: null,
   db: null,
   unsubscribes: new Map(), // doc -> unsubscribe fn
-  live: new Set(),         // docs whose initial snapshot has arrived (listening)
+  live: new Set(),         // docs the server has answered for (really listening)
   refreshTimer: null,
   config: null,
   // Retry/backoff state for the setup + attach chain. Firestore auto-refreshes
@@ -23,7 +23,9 @@ const registry = {
   attempt: 0,        // consecutive failed attempts
   failed: false,     // gave up after exhausting attempts
   signedIn: false,   // have a live Firebase session covering current streams
-  emulatorsConnected: false // connect{Auth,Firestore}Emulator run (at most once)
+  emulatorsConnected: false, // connect{Auth,Firestore}Emulator run (at most once)
+  watchdogs: new Map(),   // doc -> timer awaiting the initial snapshot
+  errorCounts: new Map()  // doc -> snapshot errors seen since it last went live
 }
 
 // Jittered exponential backoff: base 1s, x2 per attempt, capped 60s, +/-50%
@@ -32,6 +34,15 @@ const BACKOFF_BASE_MS = 1000
 const BACKOFF_FACTOR = 2
 const BACKOFF_CAP_MS = 60000
 const BACKOFF_MAX_ATTEMPTS = 8
+
+// How long a listener may go without its initial snapshot before we call it
+// dead (server default, overridable per app via cable.listen_timeout).
+const LISTEN_TIMEOUT_MS = 10000
+
+// Firestore error codes that retrying cannot fix: the listen names something
+// that isn't there, or the request is malformed. Distinct from the auth codes
+// (re-sign-in may fix those) and from transient ones (the SDK recovers).
+const TERMINAL_CODES = ["not-found", "invalid-argument", "failed-precondition", "unimplemented"]
 
 function backoffDelay(failedAttempt) {
   const raw = Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * BACKOFF_FACTOR ** failedAttempt)
@@ -176,21 +187,83 @@ function handleResume() {
   if (registry.failed || registry.retryTimer) reconnect()
 }
 
+function listenTimeoutMs() {
+  const configured = Number(readConfig().listenTimeoutMs)
+  return Number.isFinite(configured) && configured > 0 ? configured : LISTEN_TIMEOUT_MS
+}
+
+// Guards the failure mode that has no other signal: a listen that never
+// resolves. Point the client at a database the project doesn't have and the SDK
+// retries the Listen channel forever without delivering anything to the error
+// callback — auth succeeded, the channel 200s, the feature is simply dead. So
+// treat "attached but no initial snapshot" as the symptom and say so loudly.
+function startWatchdog(docPath) {
+  clearWatchdog(docPath)
+  registry.watchdogs.set(docPath, setTimeout(() => {
+    registry.watchdogs.delete(docPath)
+    if (registry.live.has(docPath)) return
+    // A browser that is simply offline isn't a misconfiguration; wait it out.
+    if (navigator.onLine === false) return startWatchdog(docPath)
+
+    reportDead(docPath, `no snapshot within ${listenTimeoutMs()}ms`)
+  }, listenTimeoutMs()))
+}
+
+function clearWatchdog(docPath) {
+  const timer = registry.watchdogs.get(docPath)
+  if (timer) clearTimeout(timer)
+  registry.watchdogs.delete(docPath)
+}
+
+// The listener for this doc is not going to work. console.error (not debug:
+// silence is what let this ship broken) plus the same event apps already watch
+// for a give-up.
+function reportDead(docPath, reason) {
+  console.error(
+    `[solid-gcp-cable] listener for ${docPath} is not live: ${reason}. ` +
+    "Check that the Firestore database the client subscribes to exists " +
+    "(config databaseId, which must match cable.database server-side) and that " +
+    "the security rules allow reading the stream doc.",
+  )
+  document.dispatchEvent(
+    new CustomEvent("solid-gcp-cable:failed", { detail: { doc: docPath, error: reason } })
+  )
+}
+
+// Drop a listener and its bookkeeping. The caller decides what happens next
+// (re-attach through the backoff loop, or nothing for a terminal error).
+function detachListener(docPath) {
+  const unsubscribe = registry.unsubscribes.get(docPath)
+  if (unsubscribe) unsubscribe()
+  registry.unsubscribes.delete(docPath)
+  registry.live.delete(docPath)
+  clearWatchdog(docPath)
+  updateListeningMarker()
+}
+
 function attachListener(docPath) {
   const [collection, docId] = docPath.split("/")
   const ref = doc(registry.db, collection, docId)
   let seenInitial = false
+  startWatchdog(docPath)
 
   const unsubscribe = onSnapshot(
     ref,
     (snapshot) => {
+      // Ignore cache-sourced snapshots. Firestore raises one immediately from
+      // its local cache when it can't reach the backend — including when the
+      // listen can never succeed (a database the project doesn't have) — so a
+      // cached snapshot proves nothing about the listener and, since the server
+      // is the only writer of these docs, carries no news either.
+      if (snapshot.metadata.fromCache) return
+
       if (!seenInitial) {
-        // Skip the initial snapshot: it carries the doc's state *at listen
+        // Skip the first server snapshot: it carries the doc's state *at listen
         // time* (which may already reflect earlier touches, esp. a doc that
         // persists across page loads). Only a bump that arrives AFTER this
         // point is a real "something changed, refresh" signal. Marking the doc
-        // live here — once the initial snapshot has actually landed — is the
-        // guarantee that any subsequent touch fires the callback again.
+        // live here — once the server has actually answered — is the guarantee
+        // that any subsequent touch fires the callback again.
         seenInitial = true
         markListening(docPath)
         return
@@ -202,28 +275,43 @@ function attachListener(docPath) {
         // Auth/claims/rules changed (or token rejected): drop this listener,
         // force a fresh token + re-sign-in, then re-attach — but through the
         // backoff loop, so a persistent denial backs off instead of hot-looping.
-        const unsub = registry.unsubscribes.get(docPath)
-        if (unsub) unsub()
-        registry.unsubscribes.delete(docPath)
-        registry.live.delete(docPath)
-        updateListeningMarker()
+        detachListener(docPath)
         registry.signedIn = false
         scheduleRetry(error)
+      } else if (isTerminalError(error)) {
+        // Retrying can't fix this one (e.g. 'not-found': the database or the
+        // path doesn't exist). Stop listening and report it.
+        detachListener(docPath)
+        reportDead(docPath, String(error))
       } else {
         // Transient (e.g. 'unavailable' while offline): Firestore keeps the
-        // listener and resumes on its own — don't fight it.
-        console.debug("[solid-gcp-cable] snapshot error (transient)", error)
+        // listener and resumes on its own — don't fight it. Log it at debug for
+        // a doc that has been live, but a doc that has NEVER gone live is not a
+        // blip, it's a symptom, so let that one through at a level browsers show
+        // by default. Once per doc; the watchdog follows up if it stays dead.
+        const seen = (registry.errorCounts.get(docPath) || 0) + 1
+        registry.errorCounts.set(docPath, seen)
+        if (registry.live.has(docPath)) {
+          console.debug("[solid-gcp-cable] snapshot error (transient)", error)
+        } else if (seen === 1) {
+          console.warn(
+            `[solid-gcp-cable] snapshot error before ${docPath} ever went live (retrying)`,
+            error
+          )
+        }
       }
     }
   )
   registry.unsubscribes.set(docPath, unsubscribe)
 }
 
-// Announce that a doc is now being listened to (initial snapshot received, so
-// later touches are guaranteed to surface). Tests wait on this before writing;
-// app code can listen too. The attribute value is the count of live docs.
+// Announce that a doc is now being listened to (the server answered, so later
+// touches are guaranteed to surface). Tests wait on this before writing; app
+// code can listen too. The attribute value is the count of live docs.
 function markListening(docPath) {
   registry.live.add(docPath)
+  clearWatchdog(docPath)
+  registry.errorCounts.delete(docPath)
   updateListeningMarker()
   // A landed snapshot proves the whole chain works; clear any residual backoff.
   registry.attempt = 0
@@ -243,10 +331,19 @@ function updateListeningMarker() {
 }
 
 function isAuthError(error) {
-  const code = error && error.code ? String(error.code) : ""
+  const code = errorCode(error)
   return code.includes("permission-denied") ||
     code.includes("unauthenticated") ||
     code.includes("token-expired")
+}
+
+function isTerminalError(error) {
+  const code = errorCode(error)
+  return TERMINAL_CODES.some((terminal) => code.includes(terminal))
+}
+
+function errorCode(error) {
+  return error && error.code ? String(error.code) : ""
 }
 
 function scheduleRefresh() {
@@ -288,13 +385,8 @@ export default class extends Controller {
     if (entry.count > 0) return
 
     registry.streams.delete(this.signedNameValue)
-    const unsubscribe = registry.unsubscribes.get(entry.doc)
-    if (unsubscribe) {
-      unsubscribe()
-      registry.unsubscribes.delete(entry.doc)
-    }
-    registry.live.delete(entry.doc)
-    updateListeningMarker()
+    detachListener(entry.doc)
+    registry.errorCounts.delete(entry.doc)
 
     // Last stream gone (page nav / morph removed it): cancel any in-flight retry
     // or refresh so a Turbo navigation doesn't leak a backoff loop, and reset so

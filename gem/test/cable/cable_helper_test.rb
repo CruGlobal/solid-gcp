@@ -43,6 +43,18 @@ class CableHelperTest < SolidGcp::TestCase
     assert_equal "solid-gcp-streams", config_json["databaseId"]
   end
 
+  # The client can't tell a listener that will never resolve from one that is
+  # merely slow without a deadline, so the server always states it.
+  test "listen timeout emitted in ms" do
+    assert_equal 10_000, config_json["listenTimeoutMs"]
+
+    SolidGcp.config.cable.listen_timeout = 1.5.seconds
+
+    assert_equal 1500, config_json["listenTimeoutMs"]
+  ensure
+    SolidGcp.config.cable.listen_timeout = 10.seconds
+  end
+
   test "explicit firebase_web_config wins over emulator defaults" do
     SolidGcp.config.cable.firestore_emulator_host = "127.0.0.1:8080"
     SolidGcp.config.cable.firebase_web_config = {
