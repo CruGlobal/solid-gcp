@@ -18,11 +18,22 @@ module SolidGcp
       CONTROLLER_FILE = "solid_gcp_cable_controller.js"
       CONTROLLERS_INDEX = "app/javascript/controllers/index.js"
       CONTROLLER_IMPORT = 'import SolidGcpCableController from "solid_gcp_cable_controller"'
+      IMPORTMAP = "config/importmap.rb"
 
-      desc "Registers the SolidGcp cable Stimulus controller and copies firestore.rules."
+      # The controller imports these three; they are pinned in the app rather than
+      # in the engine so the app owns the Firebase SDK version. This is the version
+      # the gem's own suite runs against — bump it in your importmap when you like.
+      FIREBASE_VERSION = "12.0.0"
+      FIREBASE_MODULES = %w[app auth firestore].freeze
+
+      desc "Wires up the SolidGcp cable Stimulus controller (registration + firebase pins)."
 
       class_option :vendor, type: :boolean, default: false,
         desc: "Copy the controller into app/javascript/controllers instead of importing it from the gem"
+
+      class_option :rules, type: :boolean, default: false,
+        desc: "Write a firestore.rules starter (skip it when terraform owns the ruleset, as the " \
+              "cru-terraform solid-gcp module does)"
 
       def self.source_paths
         # The engine's app/javascript is a source path so --vendor copies the
@@ -57,14 +68,58 @@ module SolidGcp
         JS
       end
 
+      # Without these the registered controller's `import ... from "firebase/app"`
+      # doesn't resolve and the module throws on load — a registration alone is not
+      # a working install.
+      def pin_firebase
+        unless File.exist?(importmap_path)
+          say_status :skip, "#{IMPORTMAP} not found — pin the firebase modules however you " \
+                            "bundle JS (firebase/app, firebase/auth, firebase/firestore)", :yellow
+          return
+        end
+
+        if File.read(importmap_path).include?('pin "firebase/app"')
+          say_status :identical, IMPORTMAP, :blue
+          return
+        end
+
+        append_to_file IMPORTMAP, <<~RUBY
+
+          # Firebase ESM builds from the gstatic CDN, imported by the SolidGcp::Cable
+          # Stimulus controller. Self-contained modules; preload: false keeps them out of
+          # the modulepreload set (they load with the controller). Bump the version freely
+          # — the app owns the Firebase SDK version, not the gem.
+          #{FIREBASE_MODULES.map { |mod| pin_line(mod) }.join("\n")}
+        RUBY
+      end
+
+      # Opt-in: for apps on the cru-terraform solid-gcp module, terraform renders and
+      # releases this ruleset, so a repo-root copy is a second source of truth nobody
+      # deploys — and re-running this generator (the supported upgrade path) used to
+      # keep re-adding the file such apps had deliberately deleted.
       def copy_rules
+        unless options[:rules]
+          say_status :skip, "firestore.rules — terraform renders the ruleset; pass --rules for " \
+                            "a starter if your app deploys it itself", :blue
+          return
+        end
+
         copy_file "firestore.rules", "firestore.rules"
       end
 
       private
 
+      def pin_line(mod)
+        %(pin "firebase/#{mod}", to: "https://www.gstatic.com/firebasejs/) +
+          %(#{FIREBASE_VERSION}/firebase-#{mod}.js", preload: false)
+      end
+
       def index_path
         File.join(destination_root, CONTROLLERS_INDEX)
+      end
+
+      def importmap_path
+        File.join(destination_root, IMPORTMAP)
       end
 
       def copy_controller

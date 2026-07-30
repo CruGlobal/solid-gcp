@@ -251,7 +251,7 @@ app/controllers/solid_gcp/cable_tokens_controller.rb
 app/helpers/solid_gcp/cable_helper.rb
 app/javascript/solid_gcp_cable_controller.js # the Stimulus controller (served, not copied)
 config/importmap.rb                          # pins it for host apps (engine importmap)
-lib/generators/solid_gcp/cable_install/...   # registers the controller + firestore.rules
+lib/generators/solid_gcp/cable_install/...   # registers the controller, pins firebase
 ```
 
 ## Configuration (`SolidGcp.config.cable.*`)
@@ -348,9 +348,10 @@ streams per request (422) — a page should never need more. Response
   `debug`, which browsers hide) — silence indistinguishable from success is what let
   a stale client ship broken for a release.
 - Host app owns the `firebase` JS dep (`firebase/app`, `firebase/auth`,
-  `firebase/firestore` — full, not `lite`; lite lacks `onSnapshot`).
+  `firebase/firestore` — full, not `lite`; lite lacks `onSnapshot`), pinned in the
+  app's own importmap by `cable_install` so the app controls the SDK version.
 
-## Firestore security rules (template shipped; terraform deploys)
+## Firestore security rules (terraform deploys; gem template is opt-in reference)
 
 ```
 rules_version = '2';

@@ -141,12 +141,31 @@ for a morph refresh. Install the client side with:
 bin/rails generate solid_gcp:cable_install
 ```
 
-That registers the Stimulus controller in `app/javascript/controllers/index.js` and
-copies a `firestore.rules` starter. The controller itself is **served by the engine**
-(importmap pin) — it is deliberately not copied into your app, because a copy goes
-stale: apps that vendored it kept subscribing to the `(default)` database long after
-the gem learned about named ones. If you bundle JS with esbuild/webpack and need the
-file locally, `--vendor` copies the same file the engine serves.
+That does two things: registers the Stimulus controller in
+`app/javascript/controllers/index.js`, and pins the three Firebase modules the
+controller imports in `config/importmap.rb`:
+
+```ruby
+pin "firebase/app", to: "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js", preload: false
+pin "firebase/auth", to: "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js", preload: false
+pin "firebase/firestore", to: "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js", preload: false
+```
+
+Those pins live in your app, not the engine, so you own the Firebase SDK version —
+bump it freely. (Without them the registered controller's imports don't resolve and
+the module throws on load, so add them by hand if you don't use importmap.)
+
+The controller itself is **served by the engine** (importmap pin) — deliberately not
+copied into your app, because a copy goes stale: apps that vendored it kept
+subscribing to the `(default)` database long after the gem learned about named ones.
+If you bundle JS with esbuild/webpack and need the file locally, `--vendor` copies the
+same file the engine serves.
+
+Security rules are **not** written by default: the
+[cru-terraform solid-gcp module](https://github.com/CruGlobal/cru-terraform-modules/tree/main/applications/solid-gcp)
+renders and releases the ruleset, so a copy in the app is a second source of truth
+nobody deploys. `--rules` writes a `firestore.rules` starter for apps that deploy rules
+themselves.
 
 Then, in a view:
 
