@@ -36,3 +36,49 @@ jobs:
           working-directory: dummy
       - run: bin/rails db:prepare
       - run: bin/rails test
+
+  # The cable client end to end (Firestore touch -> custom token -> browser
+  # sign-in -> listen -> Turbo morph) against the Firebase emulators, so it needs
+  # no GCP credentials and runs on every PR. Exercises the controller the gem
+  # ships, against a NAMED Firestore database — the combination whose absence let
+  # a stale vendored client subscribe to "(default)" unnoticed for a whole
+  # release. Runs the browser tests only; `dummy` above covers the rest.
+  cable-emulator:
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: test
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+    services:
+      emulators:
+        image: ghcr.io/cruglobal/solid-gcp-firebase-emulators:latest
+        ports:
+          - 8080:8080
+          - 9099:9099
+    defaults:
+      run:
+        working-directory: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.4.7
+          bundler-cache: true
+          working-directory: dummy
+      - name: Wait for the emulators
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf localhost:8080 >/dev/null && curl -sf localhost:9099 >/dev/null && exit 0
+            sleep 1
+          done
+          echo "emulators did not come up" >&2
+          docker logs "$(docker ps -q --filter ancestor=ghcr.io/cruglobal/solid-gcp-firebase-emulators:latest)" || true
+          exit 1
+      - run: bin/rails db:prepare
+      - run: bin/rails test:system
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cable-emulator-screenshots
+          path: dummy/tmp/screenshots
+          if-no-files-found: ignore
