@@ -10,7 +10,7 @@ Image tags track the pinned `firebase-tools` version (not gem releases).
 
 ```bash
 docker run --rm -p 8080:8080 -p 9099:9099 \
-  ghcr.io/cruglobal/solid-gcp-firebase-emulators:15.23.0
+  ghcr.io/cruglobal/solid-gcp-firebase-emulators:15.25.0
 ```
 
 Firestore is on `localhost:8080`, Auth on `localhost:9099`. Point the gem at them:
@@ -28,7 +28,7 @@ start; mount your own config for rules parity with prod (below).
 ```yaml
 services:
   firebase-emulators:
-    image: ghcr.io/cruglobal/solid-gcp-firebase-emulators:15.23.0
+    image: ghcr.io/cruglobal/solid-gcp-firebase-emulators:15.25.0
     ports: ["8080:8080", "9099:9099"]
     volumes:
       - ./firebase.json:/firebase/firebase.json:ro
