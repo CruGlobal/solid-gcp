@@ -12,7 +12,7 @@ jobs:
       run:
         working-directory: gem
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.4.7
@@ -28,7 +28,7 @@ jobs:
       run:
         working-directory: dummy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.4.7
@@ -59,7 +59,7 @@ jobs:
       run:
         working-directory: dummy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.4.7
@@ -76,7 +76,7 @@ jobs:
           exit 1
       - run: bin/rails db:prepare
       - run: bin/rails test:system
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: cable-emulator-screenshots
