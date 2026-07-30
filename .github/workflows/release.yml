@@ -19,7 +19,7 @@ jobs:
       run:
         working-directory: gem
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag matches SolidGcp::VERSION
         run: |
           ruby -e '
@@ -42,7 +42,7 @@ jobs:
       run:
         working-directory: dummy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.4.7
@@ -57,7 +57,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Extract CHANGELOG section for this version
         run: |
           version="${GITHUB_REF_NAME#v}"
