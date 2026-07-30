@@ -8,6 +8,8 @@ tag.)
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-30
+
 - Recurring: `recurring.yml` is parsed with `ActiveSupport::ConfigurationFile`,
   which is what Solid Queue reads it with, so ERB and YAML anchors both work as
   they do there. Previously a plain `YAML.load_file` ignored ERB and rejected
