@@ -132,6 +132,45 @@ end
 
 Solid GCP refuses to boot if Solid Queue is also loaded (both define `limits_concurrency`).
 
+## Realtime refresh (Cable)
+
+`SolidGcp::Cable` bumps a Firestore doc per stream; the browser listens and asks Turbo
+for a morph refresh. Install the client side with:
+
+```bash
+bin/rails generate solid_gcp:cable_install
+```
+
+That registers the Stimulus controller in `app/javascript/controllers/index.js` and
+copies a `firestore.rules` starter. The controller itself is **served by the engine**
+(importmap pin) — it is deliberately not copied into your app, because a copy goes
+stale: apps that vendored it kept subscribing to the `(default)` database long after
+the gem learned about named ones. If you bundle JS with esbuild/webpack and need the
+file locally, `--vendor` copies the same file the engine serves.
+
+Then, in a view:
+
+```erb
+<%= solid_gcp_cable_config_tag %>
+<%= firestore_stream_from :job_runs %>
+```
+
+and touch the stream when the data changes (`after_create_commit { SolidGcp::Cable.touch_later(:job_runs) }`).
+
+Cable keys live under `config.solid_gcp.cable`: `mode` (`:firestore` \| `:test` \| `:off`),
+`project`, `database`, `collection`, `firebase_web_config`, `signer_email`, `stream_ttl`,
+`token_ttl`, `touch_debounce`, `listen_timeout`. A named `database` must match the
+terraform module's `firestore_database_id`; it is emitted to the client as `databaseId`,
+so client and server subscribe to the same place.
+
+**Failure is loud.** A listener that has not been answered by the server within
+`listen_timeout` (10s default) logs `console.error` and dispatches
+`solid-gcp-cable:failed` on `document`; so do errors that retrying can't fix (e.g.
+`not-found` — a database the project doesn't have, which the Firestore SDK otherwise
+retries forever in silence). `solid-gcp-cable:listening` and the
+`data-solid-gcp-cable-listening` attribute mean the *server* answered, not merely that
+the SDK handed over its local cache.
+
 ## Local development
 
 Run the full flow in-process without GCP credentials:
