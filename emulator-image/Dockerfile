@@ -12,7 +12,7 @@ FROM node:22-trixie-slim
 
 # Keep in sync with the emulator-image.yml workflow, which greps this ARG to
 # derive the pushed tag.
-ARG FIREBASE_TOOLS_VERSION=15.23.0
+ARG FIREBASE_TOOLS_VERSION=15.25.0
 
 # openjdk JRE is the Firestore emulator's only system dep (it's a Java jar);
 # firebase-tools >=15 needs Java 21+.

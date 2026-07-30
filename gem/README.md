@@ -216,7 +216,7 @@ locally with zero GCP credentials. The recommended path is the prebuilt emulator
 
 ```bash
 docker run --rm -p 8080:8080 -p 9099:9099 \
-  ghcr.io/cruglobal/solid-gcp-firebase-emulators:15.23.0
+  ghcr.io/cruglobal/solid-gcp-firebase-emulators:15.25.0
 ```
 
 Or via docker-compose, mounting your app's `firebase.json` + `firestore.rules` so the
