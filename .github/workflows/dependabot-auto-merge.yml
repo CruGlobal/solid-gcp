@@ -1,0 +1,83 @@
+name: Dependabot auto-merge
+
+# Squash-merges a Dependabot PR once the Test workflow has passed for that exact
+# head SHA.
+#
+# Gating on the Test run rather than on branch-protection required checks is
+# deliberate: releases push the version-bump commit straight to main (see the
+# gem README's release steps), and required checks would block that for anyone
+# without repo admin. This gives the same "nothing lands red" guarantee without
+# taking the release flow away.
+#
+# Runs on workflow_run, so it uses the copy of this file on main and never checks
+# out the PR's code — it only talks to the API. Nothing from the dependency being
+# bumped executes here.
+
+on:
+  workflow_run:
+    workflows: [ Test ]
+    types: [ completed ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Find the pull request
+        id: pr
+        run: |
+          set -euo pipefail
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+            --jq '[.[] | select(.state == "open" and .user.login == "dependabot[bot]")][0] // empty')
+          if [ -z "$pr" ]; then
+            echo "no open dependabot PR for $SHA — nothing to do"
+            exit 0
+          fi
+          {
+            echo "number=$(jq -r '.number' <<<"$pr")"
+            echo "branch=$(jq -r '.head.ref' <<<"$pr")"
+            echo "title=$(jq -r '.title' <<<"$pr")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check the bump against the auto-merge policy
+        id: policy
+        if: steps.pr.outputs.number != ''
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
+          TITLE: ${{ steps.pr.outputs.title }}
+        run: |
+          set -euo pipefail
+          # Grouped PRs: the group name is in the branch, and only the two
+          # patch/security groups from dependabot.yml are allowed through.
+          case "$BRANCH" in
+            dependabot/*bundler-patch*|dependabot/*bundler-security*)
+              echo "allowed: $BRANCH"
+              echo "merge=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          # Single-dependency PR ("... bump foo from 1.2.3 to 1.2.4 ..."):
+          # allowed only when major and minor are unchanged.
+          if [[ "$TITLE" =~ from\ ([0-9]+)\.([0-9]+)\.[^\ ]+\ to\ ([0-9]+)\.([0-9]+)\.[^\ ]+ ]] &&
+             [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[3]}" ] &&
+             [ "${BASH_REMATCH[2]}" = "${BASH_REMATCH[4]}" ]; then
+            echo "allowed (patch-level): $TITLE"
+            echo "merge=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "not auto-mergeable, leaving for review: $TITLE"
+          echo "merge=false" >> "$GITHUB_OUTPUT"
+
+      - name: Squash-merge
+        if: steps.policy.outputs.merge == 'true'
+        run: gh pr merge "${{ steps.pr.outputs.number }}" --squash --repo "$GITHUB_REPOSITORY"
