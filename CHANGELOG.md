@@ -8,6 +8,8 @@ tag.)
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-30
+
 - Cable: the Stimulus controller is served by the engine (importmap pin) instead
   of being copied into apps, and `cable_install` now just registers it in
   `app/javascript/controllers/index.js`. There were three diverging copies of that
