@@ -1,0 +1,4 @@
+# No env scoping: the file is the entry list.
+cleanup:
+  class: RecordingJob
+  schedule: every day at 3am

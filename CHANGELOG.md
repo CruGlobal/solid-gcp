@@ -8,6 +8,17 @@ tag.)
 
 ## [Unreleased]
 
+- Recurring: `recurring.yml` may use YAML anchors. The env-scoped form is
+  idiomatically written as `default: &default` merged into each env with
+  `<<: *default`, and Psych rejects aliases unless asked, so loading a file
+  copied straight off a Solid Queue app raised `Psych::AliasesNotEnabled`.
+- Recurring: an env-scoped `recurring.yml` with no section for the current env
+  now raises `ConfigurationError` naming the env and the sections present.
+  Previously it fell back to treating the whole file as the entry list, so every
+  env name became a job key and `scheduler:sync` would create Cloud Scheduler
+  jobs named `solid-gcp-production` and friends. A flat (unscoped) file is still
+  read as the entry list.
+
 ## [0.3.0] - 2026-07-29
 
 - Cable: named Firestore databases. `config.cable.database` already reached the
