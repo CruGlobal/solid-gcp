@@ -1,0 +1,14 @@
+# The idiomatic Solid Queue shape: one anchored section merged into each env.
+default: &default
+  cleanup:
+    class: RecordingJob
+    schedule: every day at 3am
+
+test:
+  <<: *default
+  heartbeat:
+    class: PlainJob
+    schedule: "*/5 * * * *"
+
+production:
+  <<: *default

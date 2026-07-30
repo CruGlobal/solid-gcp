@@ -4,6 +4,8 @@ require "test_helper"
 
 class RecurringTest < SolidGcp::TestCase
   FIXTURE = File.expand_path("fixtures/recurring.yml", __dir__)
+  ALIASES_FIXTURE = File.expand_path("fixtures/recurring_aliases.yml", __dir__)
+  FLAT_FIXTURE = File.expand_path("fixtures/recurring_flat.yml", __dir__)
 
   setup do
     @previous = SolidGcp.config.recurring_file
@@ -53,5 +55,31 @@ class RecurringTest < SolidGcp::TestCase
 
   test "unknown key returns false" do
     refute SolidGcp::Recurring.enqueue("nope")
+  end
+
+  # Solid Queue's own recurring.yml is conventionally written with a
+  # `default: &default` anchor merged into each env, and Psych rejects aliases
+  # unless asked. Loading such a file used to raise Psych::AliasesNotEnabled.
+  test "loads a file that merges a YAML anchor into each env" do
+    entries = SolidGcp::Recurring.load(file: ALIASES_FIXTURE, env: "test")
+
+    assert_equal %w[cleanup heartbeat], entries.keys.sort
+    assert_equal "RecordingJob", entries["cleanup"]["class"]
+  end
+
+  test "an env-scoped file with no section for this env raises rather than reading the sections as entries" do
+    error = assert_raises(SolidGcp::ConfigurationError) do
+      SolidGcp::Recurring.load(file: ALIASES_FIXTURE, env: "staging")
+    end
+
+    assert_match(/no recurring entries for env "staging"/, error.message)
+    assert_match(/sections: default, production, test/, error.message)
+  end
+
+  test "a flat file is still the entry list, whatever the env" do
+    entries = SolidGcp::Recurring.load(file: FLAT_FIXTURE, env: "staging")
+
+    assert_equal %w[cleanup], entries.keys
+    assert_equal "RecordingJob", entries["cleanup"]["class"]
   end
 end

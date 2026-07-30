@@ -211,7 +211,12 @@ on infra-not-ready so the Cloud Run Job execution retries per its own retry conf
 ## Recurring jobs
 
 Use Solid Queue's `config/recurring.yml` format (`class:`/`command:`, `args:`, `queue:`,
-`schedule:`). Sync it to Cloud Scheduler idempotently:
+`schedule:`). Either shape works: a flat map of entries, or sections per Rails env
+(plus `shared`), including the idiomatic `default: &default` anchor merged into
+each env with `<<: *default`. An env-scoped file with no section for the current
+env raises `ConfigurationError` rather than reading the section names as job keys.
+
+Sync it to Cloud Scheduler idempotently:
 
 ```bash
 bin/rails solid_gcp:scheduler:sync
