@@ -8,6 +8,19 @@ tag.)
 
 ## [Unreleased]
 
+- `cable_install` pins the three Firebase modules (`firebase/app`, `firebase/auth`,
+  `firebase/firestore`) in the app's `config/importmap.rb`. Registering the
+  controller without them leaves an install whose imports don't resolve — the
+  module throws on load. The pins go in the app, not the engine, so the app still
+  owns the Firebase SDK version. Also documented in the README for apps that don't
+  use importmap. Nobody hit this before 0.5.0 because every installer vendored the
+  controller and picked the pins up alongside it.
+- `cable_install` no longer writes `firestore.rules` unless asked (`--rules`). The
+  cru-terraform `solid-gcp` module renders and releases that ruleset, so a copy in
+  the app is a second source of truth nobody deploys — and since 0.5.0 makes
+  re-running the generator the supported upgrade path, it kept re-adding a file
+  such apps had deliberately deleted.
+
 ## [0.5.0] - 2026-07-30
 
 - Cable: the Stimulus controller is served by the engine (importmap pin) instead

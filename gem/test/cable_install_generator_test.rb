@@ -17,11 +17,16 @@ class CableInstallGeneratorTest < Rails::Generators::TestCase
 
   CANONICAL = SolidGcp::Engine.root.join("app/javascript/solid_gcp_cable_controller.js")
   INDEX = "app/javascript/controllers/index.js"
+  IMPORTMAP = "config/importmap.rb"
   DEFAULT_INDEX = <<~JS
     import { application } from "controllers/application"
     import { eagerLoadControllersFrom } from "@hotwired/stimulus-loading"
     eagerLoadControllersFrom("controllers", application)
   JS
+  DEFAULT_IMPORTMAP = <<~RUBY
+    pin "application"
+    pin_all_from "app/javascript/controllers", under: "controllers"
+  RUBY
 
   test "registers the engine-served controller instead of copying one" do
     write_index
@@ -33,7 +38,68 @@ class CableInstallGeneratorTest < Rails::Generators::TestCase
       assert_match(/application\.register\("solid-gcp-cable", SolidGcpCableController\)/, content)
     end
     assert_no_file "app/javascript/controllers/solid_gcp_cable_controller.js"
-    assert_file "firestore.rules"
+  end
+
+  # A registered controller whose `import ... from "firebase/app"` doesn't resolve
+  # throws on load, so pinning the three modules is part of installing, not a doc
+  # footnote. Pinned in the app (not the engine) so the app owns the SDK version.
+  test "pins the firebase modules the controller imports" do
+    write_index
+    write_importmap
+
+    run_generator
+
+    assert_file IMPORTMAP do |content|
+      %w[app auth firestore].each do |mod|
+        assert_match(
+          %r{^pin "firebase/#{mod}", to: "https://www\.gstatic\.com/firebasejs/\d+\.\d+\.\d+/firebase-#{mod}\.js", preload: false$},
+          content
+        )
+      end
+    end
+  end
+
+  test "re-running does not pin firebase twice" do
+    write_index
+    write_importmap
+
+    run_generator
+    run_generator
+
+    assert_equal 1, File.read(File.join(destination_root, IMPORTMAP)).scan(/pin "firebase\/app"/).length
+  end
+
+  test "without an importmap it says so rather than failing" do
+    write_index
+
+    output = run_generator
+
+    assert_match(/#{Regexp.escape(IMPORTMAP)} not found/, output)
+    assert_file INDEX do |content|
+      assert_match(/application\.register/, content)
+    end
+  end
+
+  # For apps on the cru-terraform solid-gcp module, terraform renders and releases
+  # the ruleset; re-running the generator used to keep re-adding a file those apps
+  # deleted on purpose.
+  test "no firestore.rules unless asked" do
+    write_index
+
+    output = run_generator
+
+    assert_no_file "firestore.rules"
+    assert_match(/terraform renders the ruleset/, output)
+  end
+
+  test "--rules writes the starter" do
+    write_index
+
+    run_generator [ "--rules" ]
+
+    assert_file "firestore.rules" do |content|
+      assert_match(/solid_gcp_streams/, content)
+    end
   end
 
   test "re-running does not register the controller twice" do
@@ -63,14 +129,22 @@ class CableInstallGeneratorTest < Rails::Generators::TestCase
     output = run_generator
 
     assert_match(/#{Regexp.escape(INDEX)} not found/, output)
-    assert_file "firestore.rules"
+    assert_no_file "app/javascript/controllers/solid_gcp_cable_controller.js"
   end
 
   private
 
   def write_index
-    path = File.join(destination_root, INDEX)
+    write_destination_file(INDEX, DEFAULT_INDEX)
+  end
+
+  def write_importmap
+    write_destination_file(IMPORTMAP, DEFAULT_IMPORTMAP)
+  end
+
+  def write_destination_file(relative, content)
+    path = File.join(destination_root, relative)
     FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, DEFAULT_INDEX)
+    File.write(path, content)
   end
 end
