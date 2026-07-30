@@ -8,6 +8,8 @@ tag.)
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-30
+
 - `cable_install` pins the three Firebase modules (`firebase/app`, `firebase/auth`,
   `firebase/firestore`) in the app's `config/importmap.rb`. Registering the
   controller without them leaves an install whose imports don't resolve — the
