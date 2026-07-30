@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "yaml"
+require "active_support/configuration_file"
 
 module SolidGcp
   # Parses recurring.yml (Solid Queue's format) and enqueues entries by key.
@@ -10,17 +10,19 @@ module SolidGcp
     # Returns { key => entry_hash } for the current environment.
     #
     # Accepts either shape: a flat map of entries, or Solid Queue's env-scoped
-    # file (a section per env, or a "shared" section). Aliases are enabled because
-    # the env-scoped form is idiomatically written with a `default: &default`
-    # anchor merged into each env — Psych refuses those by default, so a file
-    # copied straight off a Solid Queue app used to raise
-    # Psych::AliasesNotEnabled.
+    # file (a section per env, or a "shared" section).
+    #
+    # Parsed through ActiveSupport::ConfigurationFile, which is what Solid Queue
+    # itself reads recurring.yml with, so ERB and YAML aliases both work as they
+    # do there (the env-scoped form is idiomatically written with a
+    # `default: &default` anchor merged into each env). Same trust assumption as
+    # database.yml: the file ships in the app's own repo.
     def load(file: nil, env: nil)
       file ||= SolidGcp.config.recurring_file
       env ||= (defined?(Rails) && Rails.respond_to?(:env) ? Rails.env.to_s : "development")
       return {} unless File.exist?(file)
 
-      raw = YAML.load_file(file, aliases: true) || {}
+      raw = ActiveSupport::ConfigurationFile.parse(file) || {}
       (scope(raw, file: file, env: env) || {}).transform_keys(&:to_s)
     end
 

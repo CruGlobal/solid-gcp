@@ -6,6 +6,7 @@ class RecurringTest < SolidGcp::TestCase
   FIXTURE = File.expand_path("fixtures/recurring.yml", __dir__)
   ALIASES_FIXTURE = File.expand_path("fixtures/recurring_aliases.yml", __dir__)
   FLAT_FIXTURE = File.expand_path("fixtures/recurring_flat.yml", __dir__)
+  ERB_FIXTURE = File.expand_path("fixtures/recurring_erb.yml", __dir__)
 
   setup do
     @previous = SolidGcp.config.recurring_file
@@ -81,5 +82,27 @@ class RecurringTest < SolidGcp::TestCase
 
     assert_equal %w[cleanup], entries.keys
     assert_equal "RecordingJob", entries["cleanup"]["class"]
+  end
+
+  # Solid Queue reads recurring.yml through ActiveSupport::ConfigurationFile, so
+  # a schedule (or queue, or args) may be interpolated; we parse the same way.
+  test "renders ERB in the file" do
+    entries = SolidGcp::Recurring.load(file: ERB_FIXTURE, env: "test")
+
+    assert_equal "every day at 3am", entries["cleanup"]["schedule"]
+
+    with_env("SOLID_GCP_TEST_CLEANUP_HOUR", "5") do
+      entries = SolidGcp::Recurring.load(file: ERB_FIXTURE, env: "test")
+
+      assert_equal "every day at 5am", entries["cleanup"]["schedule"]
+    end
+  end
+
+  def with_env(key, value)
+    previous = ENV[key]
+    ENV[key] = value
+    yield
+  ensure
+    ENV[key] = previous
   end
 end

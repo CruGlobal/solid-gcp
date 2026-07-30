@@ -8,10 +8,12 @@ tag.)
 
 ## [Unreleased]
 
-- Recurring: `recurring.yml` may use YAML anchors. The env-scoped form is
-  idiomatically written as `default: &default` merged into each env with
-  `<<: *default`, and Psych rejects aliases unless asked, so loading a file
-  copied straight off a Solid Queue app raised `Psych::AliasesNotEnabled`.
+- Recurring: `recurring.yml` is parsed with `ActiveSupport::ConfigurationFile`,
+  which is what Solid Queue reads it with, so ERB and YAML anchors both work as
+  they do there. Previously a plain `YAML.load_file` ignored ERB and rejected
+  aliases, so the env-scoped form written idiomatically as `default: &default`
+  merged into each env with `<<: *default` — i.e. a file copied straight off a
+  Solid Queue app — raised `Psych::AliasesNotEnabled`.
 - Recurring: an env-scoped `recurring.yml` with no section for the current env
   now raises `ConfigurationError` naming the env and the sections present.
   Previously it fell back to treating the whole file as the entry list, so every
